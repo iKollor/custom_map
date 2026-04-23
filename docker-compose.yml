@@ -1,7 +1,26 @@
 services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: map-platform-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mapuser}:${POSTGRES_PASSWORD:-map_dev}@postgres:5432/${POSTGRES_DB:-mapdb}
+      AUTH_USERNAME: ${AUTH_USERNAME:-admin}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-mapa2025}
+      AUTH_SESSION_TOKEN: ${AUTH_SESSION_TOKEN:-dev-token-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
   # PostgreSQL with PostGIS extension
   postgres:
-    image: nickblah/postgis:17-bookworm-postgis-3.6
+    image: postgis/postgis:17-3.5
     container_name: map-platform-postgres
     restart: unless-stopped
     environment:
@@ -12,7 +31,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init-postgis.sql:/docker-entrypoint-initdb.d/init-postgis.sql:ro
+      - ./docker/postgre/init-postgis.sql:/docker-entrypoint-initdb.d/init-postgis.sql:ro
     healthcheck:
       test:
         [

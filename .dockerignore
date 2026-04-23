@@ -4,3 +4,9 @@ node_modules
 dist
 .next
 .env
+.env.*
+.yarn/cache
+.yarn/install-state.gz
+docker
+README.md
+DESIGN_AGENT_GUIDE.md
