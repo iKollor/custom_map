@@ -28,8 +28,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASS: ${POSTGRES_PASSWORD}
       POSTGRES_DBNAME: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgre/init-postgis.sql:/docker-entrypoint-initdb.d/init-postgis.sql:ro
