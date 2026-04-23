@@ -3,6 +3,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_MAP_STYLE: ${NEXT_PUBLIC_MAP_STYLE:-https://tiles.openfreemap.org/styles/liberty}
+        NEXT_PUBLIC_MAP_STYLE_DARK: ${NEXT_PUBLIC_MAP_STYLE_DARK:-}
+        NEXT_PUBLIC_DEFAULT_CENTER_LAT: ${NEXT_PUBLIC_DEFAULT_CENTER_LAT:--2.1894}
+        NEXT_PUBLIC_DEFAULT_CENTER_LNG: ${NEXT_PUBLIC_DEFAULT_CENTER_LNG:--79.8891}
+        NEXT_PUBLIC_DEFAULT_ZOOM: ${NEXT_PUBLIC_DEFAULT_ZOOM:-12}
     container_name: map-platform-web
     restart: unless-stopped
     environment:
@@ -12,6 +18,7 @@ services:
       AUTH_USERNAME: ${AUTH_USERNAME:-admin}
       AUTH_PASSWORD: ${AUTH_PASSWORD:-mapa2025}
       AUTH_SESSION_TOKEN: ${AUTH_SESSION_TOKEN:-dev-token-change-me}
+      OSRM_URL: ${OSRM_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

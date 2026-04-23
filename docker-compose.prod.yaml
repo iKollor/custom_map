@@ -4,6 +4,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_MAP_STYLE: ${NEXT_PUBLIC_MAP_STYLE}
+        NEXT_PUBLIC_MAP_STYLE_DARK: ${NEXT_PUBLIC_MAP_STYLE_DARK}
+        NEXT_PUBLIC_DEFAULT_CENTER_LAT: ${NEXT_PUBLIC_DEFAULT_CENTER_LAT}
+        NEXT_PUBLIC_DEFAULT_CENTER_LNG: ${NEXT_PUBLIC_DEFAULT_CENTER_LNG}
+        NEXT_PUBLIC_DEFAULT_ZOOM: ${NEXT_PUBLIC_DEFAULT_ZOOM}
     container_name: soundmap-web
     restart: unless-stopped
     environment:
@@ -13,11 +19,12 @@ services:
       AUTH_USERNAME: ${AUTH_USERNAME}
       AUTH_PASSWORD: ${AUTH_PASSWORD}
       AUTH_SESSION_TOKEN: ${AUTH_SESSION_TOKEN}
+      OSRM_URL: ${OSRM_URL}
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3001}:3000"
 
   # PostgreSQL with PostGIS extension
   postgres:

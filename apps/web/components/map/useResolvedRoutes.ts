@@ -66,6 +66,40 @@ function decodePolyline(str: string, precision = 5): [number, number][] {
     return coordinates
 }
 
+// Provider 0: Self-hosted OSRM (configurable via NEXT_PUBLIC_OSRM_URL)
+// If NEXT_PUBLIC_OSRM_URL is not set, use the internal Next.js proxy at /api/route
+// which forwards to OSRM_URL configured server-side.
+const SELF_HOSTED_OSRM_URL =
+    process.env.NEXT_PUBLIC_OSRM_URL?.replace(/\/$/, '') ?? '/api/route'
+
+async function fetchOsrmSelfHosted(
+    coordinates: [number, number][],
+    signal: AbortSignal,
+): Promise<[number, number][] | null> {
+    if (!SELF_HOSTED_OSRM_URL) return null
+
+    const waypoints = coordinates
+        .slice(0, 25)
+        .map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`)
+        .join(';')
+
+    // Proxy route: /api/route/v1/driving/... ; direct OSRM: <host>/route/v1/driving/...
+    const base = SELF_HOSTED_OSRM_URL.startsWith('/')
+        ? SELF_HOSTED_OSRM_URL
+        : `${SELF_HOSTED_OSRM_URL}/route`
+    const url = `${base}/v1/driving/${waypoints}?overview=full&geometries=geojson`
+
+    const response = await fetch(url, { signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    const payload = (await response.json()) as {
+        code?: string
+        routes?: Array<{ geometry?: { coordinates?: [number, number][] } }>
+    }
+    const coords = payload.routes?.[0]?.geometry?.coordinates
+    return coords && coords.length > 0 ? coords : null
+}
+
 // Provider 1: OSRM public demo server
 async function fetchOsrmPublic(
     coordinates: [number, number][],
@@ -149,6 +183,7 @@ async function fetchValhallaFossgis(
 }
 
 const ROUTE_PROVIDERS: RouteProvider[] = [
+    { name: 'osrm-self-hosted', fetch: fetchOsrmSelfHosted },
     { name: 'valhalla-fossgis', fetch: fetchValhallaFossgis },
     { name: 'osrm-fossgis', fetch: fetchOsrmFossgis },
     { name: 'osrm-public', fetch: fetchOsrmPublic },
