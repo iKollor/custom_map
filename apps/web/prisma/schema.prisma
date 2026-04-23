@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums
+enum FeatureType {
+  SECTION
+  ROUTE
+  POINT
+}
+
+// Models
+model Category {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  color         String        // hex color code
+  uiConfig      Json?         // MarkerUIConfig overrides
+  subcategories Subcategory[]
+  features      Feature[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("categories")
+}
+
+model Subcategory {
+  id         String    @id @default(cuid())
+  name       String
+  categoryId String
+  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  features   Feature[]
+  uiConfig   Json?     // MarkerUIConfig overrides
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([name, categoryId])
+  @@map("subcategories")
+}
+
+model Feature {
+  id            String       @id @default(cuid())
+  name          String
+  type          FeatureType
+  geometry      Json         // GeoJSON Feature geometry
+  properties    Json         // Extra CSV columns stored as schema-less JSON
+  categoryId    String?
+  category      Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId String?
+  subcategory   Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([type])
+  @@index([categoryId])
+  @@index([subcategoryId])
+  @@map("features")
+}

@@ -1,0 +1,2 @@
+type,name,category,subcategory,coordinates,description
+route,Ruta Mall del Sur - Mall del Norte,Movilidad,Conector Comercial,"LINESTRING(-79.91155 -2.22977, -79.90780 -2.21050, -79.90020 -2.19030, -79.89090 -2.17020, -79.88380 -2.15060, -79.87620 -2.13090, -79.86880 -2.11300, -79.86190 -2.09900)",Conector de referencia entre Mall del Sur y Mall del Norte en Guayaquil

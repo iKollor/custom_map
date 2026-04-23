@@ -10,14 +10,18 @@
     "cssVariables": true
   },
   "iconLibrary": "lucide",
-  "aliases": {
-    "components": "@/components",
-    "hooks": "@/hooks",
-    "lib": "@/lib",
-    "utils": "@workspace/ui/lib/utils",
-    "ui": "@workspace/ui/components"
-  },
   "rtl": false,
   "menuColor": "default",
-  "menuAccent": "subtle"
+  "menuAccent": "subtle",
+  "aliases": {
+    "components": "@/components",
+    "utils": "@workspace/ui/lib/utils",
+    "ui": "@workspace/ui/components",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "registries": {
+    "@mapcn": "https://mapcn.dev/r/{name}.json",
+    "@animate-ui": "https://animate-ui.com/r/{name}.json"
+  }
 }

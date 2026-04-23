@@ -12,21 +12,39 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@floating-ui/react": "^0.27.19",
+    "@prisma/adapter-pg": "latest",
+    "@prisma/client": "latest",
+    "@turf/turf": "^6",
     "@workspace/ui": "workspace:*",
-    "lucide-react": "^1.8.0",
+    "class-variance-authority": "^0.7.1",
+    "geojson": "^0.5.0",
+    "lucide-react": "^1.9.0",
+    "maplibre-gl": "^5.24.0",
+    "motion": "^12.38.0",
     "next": "16.1.6",
     "next-themes": "^0.4.6",
+    "papaparse": "^5.4.1",
+    "pg": "^8.13.1",
+    "radix-ui": "^1.4.3",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "recharts": "3.8.0",
+    "supercluster": "^8.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
+    "@types/geojson": "*",
     "@types/node": "^25.1.0",
+    "@types/papaparse": "^5.3.14",
+    "@types/pg": "^8.11.10",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
+    "@types/supercluster": "*",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^9.39.2",
+    "prisma": "latest",
     "typescript": "^5.9.3"
   }
 }
