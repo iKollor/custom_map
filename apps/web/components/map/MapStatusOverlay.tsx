@@ -93,7 +93,7 @@ export function MapStatusOverlay({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 8 }}
                 transition={{ duration: 0.22 }}
-                className="pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top,0px)+3.25rem)] z-10 -translate-x-1/2 md:hidden"
+                className="pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top,0)+3.25rem)] z-10 -translate-x-1/2 md:hidden"
             >
                 <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/60 bg-background/92 px-3 py-1 text-[11px] font-medium shadow-md backdrop-blur-sm">
                     <span

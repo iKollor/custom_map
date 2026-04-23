@@ -24,7 +24,7 @@ const positionClasses = {
     "top-left": "top-2 left-2",
     "top-right": "top-2 right-2",
     "bottom-left": "bottom-2 left-2",
-    "bottom-right": "bottom-10 right-2 [--map-ctrl-bottom:max(env(safe-area-inset-bottom,0px),2.5rem)] bottom-[var(--map-ctrl-bottom)]",
+    "bottom-right": "right-2 bottom-[max(env(safe-area-inset-bottom,0px),2.5rem)]",
 };
 
 function ControlGroup({ children }: { children: React.ReactNode }) {
