@@ -20,13 +20,13 @@ services:
 
   # PostgreSQL with PostGIS extension
   postgres:
-    image: postgis/postgis:17-3.5
+    image: kartoza/postgis:16-3.4
     container_name: map-platform-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mapuser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-map_dev}
-      POSTGRES_DB: ${POSTGRES_DB:-mapdb}
+      POSTGRES_PASS: ${POSTGRES_PASSWORD:-map_dev}
+      POSTGRES_DBNAME: ${POSTGRES_DB:-mapdb}
     ports:
       - "5432:5432"
     volumes:

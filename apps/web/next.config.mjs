@@ -7,9 +7,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url))
 const nextConfig = {
   transpilePackages: ["@workspace/ui"],
   output: "standalone",
-  experimental: {
-    outputFileTracingRoot: path.join(__dirname, "../../"),
-  },
+  outputFileTracingRoot: path.join(__dirname, "../../"),
 }
 
 export default nextConfig
