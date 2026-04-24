@@ -1,7 +1,7 @@
 "use client";
 
 import type MapLibreGL from "maplibre-gl";
-import { useEffect, useId } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { MAP_COLORS } from "./constants";
 import { useMap } from "./core";
@@ -20,8 +20,11 @@ type MapRouteProps = {
         screenPos: { x: number; y: number },
     ) => void;
     onMouseEnter?: () => void;
+    onMouseMove?: (coords: [number, number]) => void;
     onMouseLeave?: () => void;
     interactive?: boolean;
+    animateOnMount?: boolean;
+    animationDurationMs?: number;
 };
 
 type MapPolygonProps = {
@@ -37,8 +40,11 @@ type MapPolygonProps = {
         screenPos: { x: number; y: number },
     ) => void;
     onMouseEnter?: () => void;
+    onMouseMove?: (coords: [number, number]) => void;
     onMouseLeave?: () => void;
     interactive?: boolean;
+    animateOnMount?: boolean;
+    animationDurationMs?: number;
 };
 
 function MapPolygon({
@@ -51,8 +57,11 @@ function MapPolygon({
     onClick,
     onContextMenu,
     onMouseEnter,
+    onMouseMove,
     onMouseLeave,
     interactive = true,
+    animateOnMount = false,
+    animationDurationMs = 680,
 }: MapPolygonProps) {
     const { map, isLoaded } = useMap();
     const autoId = useId();
@@ -60,6 +69,7 @@ function MapPolygon({
     const sourceId = `polygon-source-${id}`;
     const fillLayerId = `polygon-fill-${id}`;
     const outlineLayerId = `polygon-outline-${id}`;
+    const hasAnimatedRef = useRef(false);
 
     useEffect(() => {
         if (!isLoaded || !map) return;
@@ -79,7 +89,7 @@ function MapPolygon({
             source: sourceId,
             paint: {
                 "fill-color": fillColor,
-                "fill-opacity": fillOpacity,
+                "fill-opacity": animateOnMount ? 0 : fillOpacity,
             },
         });
 
@@ -89,8 +99,8 @@ function MapPolygon({
             source: sourceId,
             paint: {
                 "line-color": outlineColor ?? fillColor,
-                "line-opacity": outlineOpacity,
-                "line-width": 2,
+                "line-opacity": animateOnMount ? 0 : outlineOpacity,
+                "line-width": animateOnMount ? 0.8 : 2,
             },
             layout: { "line-join": "round", "line-cap": "round" },
         });
@@ -110,6 +120,42 @@ function MapPolygon({
         fillOpacity,
         outlineColor,
         outlineOpacity,
+        animateOnMount,
+    ]);
+
+    useEffect(() => {
+        if (!isLoaded || !map || !animateOnMount || hasAnimatedRef.current) return;
+        if (!map.getLayer(fillLayerId) || !map.getLayer(outlineLayerId)) return;
+
+        hasAnimatedRef.current = true;
+        map.setPaintProperty(fillLayerId, "fill-opacity-transition", {
+            duration: animationDurationMs,
+            delay: 0,
+        });
+        map.setPaintProperty(outlineLayerId, "line-opacity-transition", {
+            duration: animationDurationMs,
+            delay: 0,
+        });
+        map.setPaintProperty(outlineLayerId, "line-width-transition", {
+            duration: animationDurationMs,
+            delay: 0,
+        });
+
+        requestAnimationFrame(() => {
+            if (!map.getLayer(fillLayerId) || !map.getLayer(outlineLayerId)) return;
+            map.setPaintProperty(fillLayerId, "fill-opacity", fillOpacity);
+            map.setPaintProperty(outlineLayerId, "line-opacity", outlineOpacity);
+            map.setPaintProperty(outlineLayerId, "line-width", 2);
+        });
+    }, [
+        isLoaded,
+        map,
+        animateOnMount,
+        fillLayerId,
+        outlineLayerId,
+        fillOpacity,
+        outlineOpacity,
+        animationDurationMs,
     ]);
 
     useEffect(() => {
@@ -165,6 +211,9 @@ function MapPolygon({
             map.getCanvas().style.cursor = "pointer";
             onMouseEnter?.();
         };
+        const handleMouseMove = (e: MapLibreGL.MapMouseEvent) => {
+            onMouseMove?.([e.lngLat.lng, e.lngLat.lat]);
+        };
         const handleMouseLeave = () => {
             map.getCanvas().style.cursor = "";
             onMouseLeave?.();
@@ -173,12 +222,14 @@ function MapPolygon({
         map.on("click", fillLayerId, handleClick);
         map.on("contextmenu", fillLayerId, handleContextMenuEvent);
         map.on("mouseenter", fillLayerId, handleMouseEnter);
+        map.on("mousemove", fillLayerId, handleMouseMove);
         map.on("mouseleave", fillLayerId, handleMouseLeave);
 
         return () => {
             map.off("click", fillLayerId, handleClick);
             map.off("contextmenu", fillLayerId, handleContextMenuEvent);
             map.off("mouseenter", fillLayerId, handleMouseEnter);
+            map.off("mousemove", fillLayerId, handleMouseMove);
             map.off("mouseleave", fillLayerId, handleMouseLeave);
         };
     }, [
@@ -188,6 +239,7 @@ function MapPolygon({
         onClick,
         onContextMenu,
         onMouseEnter,
+        onMouseMove,
         onMouseLeave,
         interactive,
     ]);
@@ -205,14 +257,18 @@ function MapRoute({
     onClick,
     onContextMenu,
     onMouseEnter,
+    onMouseMove,
     onMouseLeave,
     interactive = true,
+    animateOnMount = false,
+    animationDurationMs = 680,
 }: MapRouteProps) {
     const { map, isLoaded } = useMap();
     const autoId = useId();
     const id = propId ?? autoId;
     const sourceId = `route-source-${id}`;
     const layerId = `route-layer-${id}`;
+    const hasAnimatedRef = useRef(false);
 
     useEffect(() => {
         if (!isLoaded || !map) return;
@@ -233,8 +289,8 @@ function MapRoute({
             layout: { "line-join": "round", "line-cap": "round" },
             paint: {
                 "line-color": color,
-                "line-width": width,
-                "line-opacity": opacity,
+                "line-width": animateOnMount ? Math.max(1, width * 0.2) : width,
+                "line-opacity": animateOnMount ? 0 : opacity,
                 ...(dashArray && { "line-dasharray": dashArray }),
             },
         });
@@ -245,6 +301,27 @@ function MapRoute({
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isLoaded, map]);
+
+    useEffect(() => {
+        if (!isLoaded || !map || !animateOnMount || hasAnimatedRef.current) return;
+        if (!map.getLayer(layerId)) return;
+
+        hasAnimatedRef.current = true;
+        map.setPaintProperty(layerId, "line-opacity-transition", {
+            duration: animationDurationMs,
+            delay: 0,
+        });
+        map.setPaintProperty(layerId, "line-width-transition", {
+            duration: animationDurationMs,
+            delay: 0,
+        });
+
+        requestAnimationFrame(() => {
+            if (!map.getLayer(layerId)) return;
+            map.setPaintProperty(layerId, "line-opacity", opacity);
+            map.setPaintProperty(layerId, "line-width", width);
+        });
+    }, [isLoaded, map, animateOnMount, layerId, opacity, width, animationDurationMs]);
 
     useEffect(() => {
         if (!isLoaded || !map || coordinates.length < 2) return;
@@ -287,6 +364,9 @@ function MapRoute({
             map.getCanvas().style.cursor = "pointer";
             onMouseEnter?.();
         };
+        const handleMouseMove = (e: MapLibreGL.MapMouseEvent) => {
+            onMouseMove?.([e.lngLat.lng, e.lngLat.lat]);
+        };
         const handleMouseLeave = () => {
             map.getCanvas().style.cursor = "";
             onMouseLeave?.();
@@ -295,12 +375,14 @@ function MapRoute({
         map.on("click", layerId, handleClick);
         map.on("contextmenu", layerId, handleContextMenuEvent);
         map.on("mouseenter", layerId, handleMouseEnter);
+        map.on("mousemove", layerId, handleMouseMove);
         map.on("mouseleave", layerId, handleMouseLeave);
 
         return () => {
             map.off("click", layerId, handleClick);
             map.off("contextmenu", layerId, handleContextMenuEvent);
             map.off("mouseenter", layerId, handleMouseEnter);
+            map.off("mousemove", layerId, handleMouseMove);
             map.off("mouseleave", layerId, handleMouseLeave);
         };
     }, [
@@ -310,6 +392,7 @@ function MapRoute({
         onClick,
         onContextMenu,
         onMouseEnter,
+        onMouseMove,
         onMouseLeave,
         interactive,
     ]);

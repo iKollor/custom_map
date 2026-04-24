@@ -139,10 +139,10 @@ export function buildMapFeatureCollection({ features, categories }: MapFeatureCo
                     properties: {
                         id: feature._id,
                         name: feature.name,
-                        category: feature.category,
+                        category: feature.subcategory || feature.category,
                         subcategory: feature.subcategory,
                         description: feature.description,
-                        color: categoryColor(feature.category, categories),
+                        color: categoryColor(feature.subcategory || feature.category, categories),
                     },
                     geometry: {
                         type: 'Point',

@@ -7,6 +7,7 @@ const pool = new Pool({
 })
 
 const adapter = new PrismaPg(pool)
+const enableQueryLogs = process.env.PRISMA_LOG_QUERIES === 'true'
 
 declare global {
     // eslint-disable-next-line no-var
@@ -17,7 +18,12 @@ export const prisma =
     global.prisma ??
     new PrismaClient({
         adapter,
-        log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+        log:
+            process.env.NODE_ENV === 'development'
+                ? enableQueryLogs
+                    ? ['query', 'error', 'warn']
+                    : ['error', 'warn']
+                : ['error'],
     })
 
 if (process.env.NODE_ENV !== 'production') {

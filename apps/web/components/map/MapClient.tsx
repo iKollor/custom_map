@@ -145,6 +145,8 @@ export default function MapClient({ username }: { username: string }) {
                     onRenameCategory={editor.handleRenameCategory}
                     onRecolorCategory={editor.handleRecolorCategory}
                     onMoveCategory={editor.handleMoveCategory}
+                    onSetCategoryParent={editor.handleSetCategoryParent}
+                    onSetFeatureCategory={editor.handleSetFeatureCategory}
                     onDeleteCategory={editor.handleDeleteCategory}
                 />
             )}

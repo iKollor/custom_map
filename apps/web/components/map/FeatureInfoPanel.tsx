@@ -23,6 +23,65 @@ const TYPE_LABELS = { point: 'Punto', route: 'Ruta', section: 'Sector' } as cons
 const TYPE_ICONS = { point: MapPin, route: Route, section: Square }
 const STANDARD_FIELDS = new Set(['type', 'name', 'category', 'subcategory', 'description', 'coordinates'])
 
+function haversineKm(start: [number, number], end: [number, number]) {
+    const R = 6371
+    const dLat = ((end[1] - start[1]) * Math.PI) / 180
+    const dLng = ((end[0] - start[0]) * Math.PI) / 180
+    const lat1 = (start[1] * Math.PI) / 180
+    const lat2 = (end[1] * Math.PI) / 180
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function routeDistanceKm(feature: ParsedFeature) {
+    const rawDistance =
+        feature.customFields?.distance_km ??
+        feature.customFields?.distancia_km ??
+        feature._raw?.distance_km ??
+        feature._raw?.distancia_km
+
+    if (rawDistance) {
+        const parsed = Number(String(rawDistance).replace(/[^\d.]/g, ''))
+        if (Number.isFinite(parsed) && parsed > 0) return parsed
+    }
+
+    const coords = feature._coords
+    if (!Array.isArray(coords) || !Array.isArray(coords[0])) return 0
+
+    const line = coords as [number, number][]
+    let total = 0
+    for (let index = 1; index < line.length; index += 1) {
+        const from = line[index - 1]
+        const to = line[index]
+        if (!from || !to) continue
+        total += haversineKm(from, to)
+    }
+    return total
+}
+
+function routeEtaText(feature: ParsedFeature, distanceKm: number) {
+    const rawEta =
+        feature.customFields?.eta_min ??
+        feature.customFields?.eta_minutes ??
+        feature.customFields?.tiempo_estimado ??
+        feature._raw?.eta_min ??
+        feature._raw?.eta_minutes ??
+        feature._raw?.tiempo_estimado
+
+    if (rawEta) {
+        const parsed = Number(String(rawEta).replace(/[^\d.]/g, ''))
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed >= 60 ? `${(parsed / 60).toFixed(1)} h` : `${Math.round(parsed)} min`
+        }
+    }
+
+    const averageSpeedKmH = 32
+    const minutes = (distanceKm / averageSpeedKmH) * 60
+    return minutes >= 60 ? `${(minutes / 60).toFixed(1)} h aprox.` : `${Math.max(1, Math.round(minutes))} min aprox.`
+}
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
     return (
         <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
@@ -123,6 +182,9 @@ function PanelContent({
             : `${(feature._coords as [number, number])[0].toFixed(5)}, ${(feature._coords as [number, number])[1].toFixed(5)}`
         : null
 
+    const routeDistance = feature.type === 'route' ? routeDistanceKm(feature) : null
+    const routeEta = feature.type === 'route' && routeDistance !== null ? routeEtaText(feature, routeDistance) : null
+
     const TypeIcon = TYPE_ICONS[feature.type]
 
     return (
@@ -201,6 +263,10 @@ function PanelContent({
                     {feature.subcategory && <FieldRow label="Subcategoría" value={feature.subcategory} />}
                     {feature.description && <FieldRow label="Descripción" value={feature.description} />}
                     {coordString && <FieldRow label="Coordenadas" value={coordString} mono />}
+                    {feature.type === 'route' && routeDistance !== null && (
+                        <FieldRow label="Distancia" value={`${routeDistance.toFixed(2)} km`} />
+                    )}
+                    {feature.type === 'route' && routeEta && <FieldRow label="ETA" value={routeEta} />}
                 </section>
 
                 {/* Extra raw CSV fields */}

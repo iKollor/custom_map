@@ -19,7 +19,17 @@ export function makeId(): string {
 }
 
 export function categoryColor(catName: string, categories: CategoryDef[]): string {
-    return categories.find((c) => c.name === catName)?.color ?? '#40A7F4'
+    const byName = new Map(categories.map((category) => [category.name, category]))
+    const byId = new Map(categories.map((category) => [category.id, category]))
+
+    const resolveColor = (category: CategoryDef | undefined, depth = 0): string | null => {
+        if (!category || depth > 8) return null
+        if (category.color?.trim()) return category.color
+        if (!category.parentId) return null
+        return resolveColor(byId.get(category.parentId), depth + 1)
+    }
+
+    return resolveColor(byName.get(catName)) ?? '#40A7F4'
 }
 
 export function normalizeFeatureType(type: string | null | undefined, wkt = ''): FeatureType {
@@ -98,8 +108,39 @@ export function csvRowsToParsed(rows: CsvRow[]): ParsedFeature[] {
         }))
 }
 
-export function downloadCSV(features: ParsedFeature[], filename: string) {
-    const csv = Papa.unparse(features.map((f) => f._raw))
+export function downloadCSV(features: ParsedFeature[], categories: CategoryDef[], filename: string) {
+    const byId = new Map(categories.map(c => [c.id, c]))
+    const byName = new Map(categories.map(c => [c.name, c]))
+
+    const rows = features.map((f) => {
+        const row = { ...f._raw }
+        const cat = byName.get(f.category)
+        
+        row.name = f.name
+        row.description = f.description ?? ''
+        row.type = f.type
+        row.coordinates = coordsToWKT(f._coords as [number, number][], f.type)
+
+        if (cat) {
+            if (cat.parentId) {
+                const parent = byId.get(cat.parentId)
+                if (parent) {
+                    row.category = parent.name
+                    row.subcategory = cat.name
+                } else {
+                    row.category = cat.name
+                    row.subcategory = ''
+                }
+            } else {
+                row.category = cat.name
+                row.subcategory = ''
+            }
+        }
+
+        return row
+    })
+
+    const csv = Papa.unparse(rows)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -117,22 +158,39 @@ export function catsFromFeatures(features: ParsedFeature[], existing: CategoryDe
         subcategories: Array.from(new Set(category.subcategories ?? [])),
     }))
 
-    // Add missing categories
-    for (const name of features.map((f) => f.category).filter(Boolean)) {
-        if (existingByName.has(name)) continue
+    const getOrCreate = (name: string, parentId: string | null): CategoryDef => {
+        const cat = next.find((c) => c.name === name)
+        if (cat) {
+            if (parentId && !cat.parentId) {
+                cat.parentId = parentId
+            }
+            return cat
+        }
         const idx = next.length
-        next.push({ id: makeId(), name, color: PALETTE[idx % PALETTE.length] ?? '#40A7F4', subcategories: [] })
+        const newCat: CategoryDef = {
+            id: makeId(),
+            name,
+            color: PALETTE[idx % PALETTE.length] ?? '#40A7F4',
+            parentId,
+            subcategories: [],
+        }
+        next.push(newCat)
         existingByName.add(name)
+        return newCat
     }
 
-    // Add subcategories
     for (const feature of features) {
-        if (!feature.category || !feature.subcategory) continue
-        const category = next.find((c) => c.name === feature.category)
-        if (!category) continue
-        const set = new Set(category.subcategories ?? [])
-        set.add(feature.subcategory)
-        category.subcategories = Array.from(set)
+        if (!feature.category) continue
+
+        const parent = getOrCreate(feature.category, null)
+        let finalCatName = parent.name
+
+        if (feature.subcategory) {
+            const sub = getOrCreate(feature.subcategory, parent.id)
+            finalCatName = sub.name
+        }
+        
+        feature.category = finalCatName
     }
 
     return next

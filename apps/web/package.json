@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
+    "@minoru/react-dnd-treeview": "^3.5.3",
     "@prisma/adapter-pg": "latest",
     "@prisma/client": "latest",
     "@turf/turf": "^6",
@@ -28,7 +29,11 @@
     "pg": "^8.13.1",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",
+    "react-arborist": "^3.5.0",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^19.2.4",
+    "react-use-measure": "^2.1.7",
     "recharts": "3.8.0",
     "supercluster": "^8.0.1"
   },

@@ -6,6 +6,7 @@ import type { Feature as GeoJsonFeature, Point as GeoJsonPoint } from 'geojson'
 import {
     MapClusterLayer,
     MapMarker,
+    MapPopup,
     MapPolygon,
     MapRoute,
     MarkerContent,
@@ -27,7 +28,7 @@ type FeatureTooltipProps = {
 
 function FeatureTooltip({ feature, coordinates, categories }: FeatureTooltipProps) {
     const { address, loading } = useReverseGeocode(coordinates[0], coordinates[1], feature.type === 'point')
-    const swatchColor = categoryColor(feature.category, categories)
+    const swatchColor = categoryColor(feature.subcategory || feature.category, categories)
     const locationText = feature.type === 'point'
         ? loading
             ? 'Buscando dirección…'
@@ -47,7 +48,7 @@ function FeatureTooltip({ feature, coordinates, categories }: FeatureTooltipProp
                 </p>
             </div>
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {feature.category || 'Sin categoría'}
+                {feature.subcategory || feature.category || 'Sin categoría'}
             </p>
             <p className="text-[11px] leading-snug text-muted-foreground/90">
                 {locationText}
@@ -78,6 +79,221 @@ const DUPLICATE_MIN_PIXEL_DISTANCE_DESKTOP = 18
 const DUPLICATE_MIN_PIXEL_DISTANCE_TOUCH = 3
 const DUPLICATE_COORD_EPSILON = 0.000001
 
+function haversineKm(start: [number, number], end: [number, number]) {
+    const R = 6371
+    const dLat = ((end[1] - start[1]) * Math.PI) / 180
+    const dLng = ((end[0] - start[0]) * Math.PI) / 180
+    const lat1 = (start[1] * Math.PI) / 180
+    const lat2 = (end[1] * Math.PI) / 180
+
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function lineDistanceKm(coordinates: [number, number][]) {
+    if (coordinates.length < 2) return 0
+    let km = 0
+    for (let index = 1; index < coordinates.length; index += 1) {
+        const from = coordinates[index - 1]
+        const to = coordinates[index]
+        if (!from || !to) continue
+        km += haversineKm(from, to)
+    }
+    return km
+}
+
+function findMetricValue(feature: ParsedFeature, keys: string[]) {
+    for (const key of keys) {
+        const customValue = feature.customFields?.[key]
+        if (customValue && customValue.trim()) return customValue.trim()
+        const rawValue = feature._raw?.[key]
+        if (rawValue && String(rawValue).trim()) return String(rawValue).trim()
+    }
+    return null
+}
+
+function parseMinutes(rawValue: string | null) {
+    if (!rawValue) return null
+    const parsed = Number(rawValue.replace(/[^\d.]/g, ''))
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function estimateEtaText(feature: ParsedFeature, distanceKm: number) {
+    const etaRaw = findMetricValue(feature, ['eta_min', 'eta_minutes', 'eta', 'tiempo_estimado', 'duration_min'])
+    const etaMinutes = parseMinutes(etaRaw)
+    if (etaMinutes) {
+        return etaMinutes >= 60
+            ? `${(etaMinutes / 60).toFixed(1)} h`
+            : `${Math.round(etaMinutes)} min`
+    }
+
+    const averageSpeedKmH = 32
+    const estimatedMinutes = (distanceKm / averageSpeedKmH) * 60
+    return estimatedMinutes >= 60
+        ? `${(estimatedMinutes / 60).toFixed(1)} h aprox.`
+        : `${Math.max(1, Math.round(estimatedMinutes))} min aprox.`
+}
+
+function pointInPolygon(point: [number, number], polygon: [number, number][]) {
+    if (polygon.length < 4) return false
+    let inside = false
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+        const xi = polygon[i]?.[0] ?? 0
+        const yi = polygon[i]?.[1] ?? 0
+        const xj = polygon[j]?.[0] ?? 0
+        const yj = polygon[j]?.[1] ?? 0
+
+        const intersects =
+            yi > point[1] !== yj > point[1] &&
+            point[0] < ((xj - xi) * (point[1] - yi)) / ((yj - yi) || Number.EPSILON) + xi
+
+        if (intersects) inside = !inside
+    }
+    return inside
+}
+
+function midpoint(coordinates: [number, number][]) {
+    if (!coordinates.length) return null
+    if (coordinates.length === 1) return coordinates[0] ?? null
+    const middle = Math.floor((coordinates.length - 1) / 2)
+    return coordinates[middle] ?? coordinates[0] ?? null
+}
+
+function centroid(coordinates: [number, number][]) {
+    if (!coordinates.length) return null
+    const unique = coordinates.slice(0, -1)
+    if (!unique.length) return coordinates[0] ?? null
+    const sum = unique.reduce(
+        (acc, point) => [acc[0] + point[0], acc[1] + point[1]] as [number, number],
+        [0, 0] as [number, number],
+    )
+    return [sum[0] / unique.length, sum[1] / unique.length] as [number, number]
+}
+
+function LineFeatureTooltip({
+    feature,
+    categories,
+    coordinates,
+    sectionPolygon,
+    pointFeatures,
+}: {
+    feature: ParsedFeature
+    categories: CategoryDef[]
+    coordinates: [number, number][]
+    sectionPolygon: [number, number][]
+    pointFeatures: ParsedFeature[]
+}) {
+    const swatchColor = categoryColor(feature.subcategory || feature.category, categories)
+
+    if (feature.type === 'route') {
+        const providerDistance = findMetricValue(feature, ['distance_km', 'distance', 'distancia_km', 'distancia'])
+        const parsedDistance = providerDistance ? Number(providerDistance.replace(/[^\d.]/g, '')) : NaN
+        const distanceKm = Number.isFinite(parsedDistance) && parsedDistance > 0
+            ? parsedDistance
+            : lineDistanceKm(coordinates)
+        const eta = estimateEtaText(feature, distanceKm)
+
+        return (
+            <div className="min-w-44 max-w-64 space-y-2 text-left">
+                <div className="flex items-center gap-2">
+                    <span
+                        aria-hidden
+                        className="inline-block size-2 shrink-0 rounded-full ring-2 ring-background"
+                        style={{ backgroundColor: swatchColor }}
+                    />
+                    <p className="truncate text-[13px] font-semibold leading-tight">{feature.name}</p>
+                </div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {feature.subcategory || feature.category || 'Sin categoría'}
+                </p>
+                <div className="grid grid-cols-2 gap-2 rounded-md border border-border/60 bg-background/60 p-2">
+                    <div>
+                        <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Distancia</p>
+                        <p className="text-xs font-semibold text-foreground">{distanceKm.toFixed(2)} km</p>
+                    </div>
+                    <div>
+                        <p className="text-[9px] uppercase tracking-wide text-muted-foreground">ETA</p>
+                        <p className="text-xs font-semibold text-foreground">{eta}</p>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    const enclosed = sectionPolygon.length >= 4
+        ? pointFeatures.filter((pointFeature) => {
+            const coords = pointFeature._coords
+            if (!Array.isArray(coords) || Array.isArray(coords[0])) return false
+            return pointInPolygon(coords as [number, number], sectionPolygon)
+        })
+        : []
+
+    const byCategory = enclosed.reduce((acc, pointFeature) => {
+        const key = pointFeature.subcategory || pointFeature.category || 'Sin categoría'
+        acc.set(key, (acc.get(key) ?? 0) + 1)
+        return acc
+    }, new Map<string, number>())
+
+    const bars = Array.from(byCategory.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+
+    const maxBar = bars[0]?.[1] ?? 1
+
+    return (
+        <div className="min-w-48 max-w-72 space-y-2 text-left">
+            <div className="flex items-center gap-2">
+                <span
+                    aria-hidden
+                    className="inline-block size-2 shrink-0 rounded-full ring-2 ring-background"
+                    style={{ backgroundColor: swatchColor }}
+                />
+                <p className="truncate text-[13px] font-semibold leading-tight">{feature.name}</p>
+            </div>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {feature.subcategory || feature.category || 'Sin categoría'}
+            </p>
+
+            <div className="grid grid-cols-2 gap-2 rounded-md border border-border/60 bg-background/60 p-2">
+                <div>
+                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Perímetro</p>
+                    <p className="text-xs font-semibold text-foreground">{lineDistanceKm(sectionPolygon).toFixed(2)} km</p>
+                </div>
+                <div>
+                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Puntos dentro</p>
+                    <p className="text-xs font-semibold text-foreground">{enclosed.length}</p>
+                </div>
+            </div>
+
+            {bars.length > 0 && (
+                <div className="space-y-1.5">
+                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Distribución de puntos</p>
+                    {bars.map(([categoryName, count]) => (
+                        <div key={categoryName} className="space-y-0.5">
+                            <div className="flex items-center justify-between text-[10px]">
+                                <span className="truncate text-muted-foreground">{categoryName}</span>
+                                <span className="font-semibold text-foreground">{count}</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-muted/70">
+                                <div
+                                    className="h-full rounded-full"
+                                    style={{
+                                        width: `${Math.max(8, (count / maxBar) * 100)}%`,
+                                        backgroundColor: categoryColor(categoryName, categories),
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
+
 // Route and section rendering
 function RouteFeature({
     feature,
@@ -86,6 +302,8 @@ function RouteFeature({
     isSelected,
     color,
     categories,
+    pointFeatures,
+    tooltipsEnabled,
     onSelectRouteAction,
     onOpenFeatureInfoAction,
     onOpenContextMenuAction,
@@ -96,10 +314,14 @@ function RouteFeature({
     isSelected: boolean
     color: string
     categories: CategoryDef[]
+    pointFeatures: ParsedFeature[]
+    tooltipsEnabled: boolean
     onSelectRouteAction: (id: string) => void
     onOpenFeatureInfoAction: (id: string | null) => void
     onOpenContextMenuAction: (state: { featureId: string; coordinates: [number, number]; screenPosition: { x: number; y: number } }) => void
 }) {
+    const [hoverCoordinates, setHoverCoordinates] = useState<[number, number] | null>(null)
+
     return (
         <>
             {feature.type === 'section' && sectionPolygon.length >= 4 && (
@@ -110,9 +332,22 @@ function RouteFeature({
                     fillOpacity={isSelected ? 0.26 : 0.16}
                     outlineColor={color}
                     outlineOpacity={isSelected ? 0.95 : 0.75}
+                    animateOnMount
                     onClick={() => {
                         onSelectRouteAction(feature._id)
                         onOpenFeatureInfoAction(feature._id)
+                    }}
+                    onMouseMove={(coords) => {
+                        if (!tooltipsEnabled) return
+                        setHoverCoordinates(coords)
+                    }}
+                    onMouseEnter={() => {
+                        if (!tooltipsEnabled) return
+                        setHoverCoordinates(sectionPolygon[0] ?? null)
+                    }}
+                    onMouseLeave={() => {
+                        if (!tooltipsEnabled) return
+                        setHoverCoordinates(null)
                     }}
                     onContextMenu={(coords, screenPosition) => {
                         onSelectRouteAction(feature._id)
@@ -132,9 +367,22 @@ function RouteFeature({
                 width={isSelected ? (feature.type === 'route' ? 6 : 4.6) : feature.type === 'route' ? 4.8 : 2.8}
                 opacity={isSelected ? 1 : feature.type === 'route' ? 0.88 : 0.72}
                 dashArray={feature.type === 'section' ? [3, 2] : undefined}
+                animateOnMount
                 onClick={() => {
                     onSelectRouteAction(feature._id)
                     onOpenFeatureInfoAction(feature._id)
+                }}
+                onMouseMove={(coords) => {
+                    if (!tooltipsEnabled) return
+                    setHoverCoordinates(coords)
+                }}
+                onMouseEnter={() => {
+                    if (!tooltipsEnabled) return
+                    setHoverCoordinates(coordinates[0] ?? null)
+                }}
+                onMouseLeave={() => {
+                    if (!tooltipsEnabled) return
+                    setHoverCoordinates(null)
                 }}
                 onContextMenu={(coords, screenPosition) => {
                     onSelectRouteAction(feature._id)
@@ -145,6 +393,26 @@ function RouteFeature({
                     })
                 }}
             />
+
+            {tooltipsEnabled && hoverCoordinates && (
+                <MapPopup
+                    longitude={hoverCoordinates[0]}
+                    latitude={hoverCoordinates[1]}
+                    closeButton={false}
+                    closeOnClick={false}
+                    closeOnMove={false}
+                    wrapperClassName="pointer-events-none"
+                    className="pointer-events-none border-border/70 bg-background/95 p-2.5"
+                >
+                    <LineFeatureTooltip
+                        feature={feature}
+                        categories={categories}
+                        coordinates={coordinates}
+                        sectionPolygon={sectionPolygon}
+                        pointFeatures={pointFeatures}
+                    />
+                </MapPopup>
+            )}
         </>
     )
 }
@@ -291,12 +559,6 @@ export function MapFeatureLayers({
         [activeSelectedRouteId, linearFeatures],
     )
 
-    const selectedRouteCoordinates = useMemo(() => {
-        const selectedRoute = sortedLinearFeatures.find((feature) => feature._id === activeSelectedRouteId)
-        if (!selectedRoute || selectedRoute.type !== 'route') return []
-        return getRenderableCoordinates(selectedRoute, resolvedRoutes)
-    }, [activeSelectedRouteId, resolvedRoutes, sortedLinearFeatures])
-
     const clusterCategoryColors = useMemo(() => {
         const palette = new Map<string, string>()
         for (const category of categories) {
@@ -325,7 +587,7 @@ export function MapFeatureLayers({
                     ? getSectionPolygonCoordinates(feature, resolvedRoutes)
                     : []
                 const isSelected = activeSelectedRouteId === feature._id
-                const color = categoryColor(feature.category, categories)
+                const color = categoryColor(feature.subcategory || feature.category, categories)
 
                 return (
                     <RouteFeature
@@ -336,6 +598,8 @@ export function MapFeatureLayers({
                         isSelected={isSelected}
                         color={color}
                         categories={categories}
+                        pointFeatures={pointFeatures}
+                        tooltipsEnabled={!isMobile && !editMode}
                         onSelectRouteAction={onSelectRouteAction}
                         onOpenFeatureInfoAction={onOpenFeatureInfoAction}
                         onOpenContextMenuAction={onOpenContextMenuAction}
@@ -343,54 +607,96 @@ export function MapFeatureLayers({
                 )
             })}
 
-            {/* Route endpoints */}
-            {!editMode && selectedRouteCoordinates.length >= 2 && (
-                <>
-                    <MapMarker
-                        longitude={selectedRouteCoordinates[0]?.[0] ?? 0}
-                        latitude={selectedRouteCoordinates[0]?.[1] ?? 0}
-                        offset={[0, 10]}
-                    >
-                        <MarkerContent>
-                            <div className="relative flex items-center justify-center">
-                                <div className="absolute size-8 rounded-full bg-[#40a7f4]/24 animate-ping animation-duration-[2.4s]" />
-                                <div className="relative size-4 rounded-full border-2 border-white bg-[#40a7f4] shadow-lg shadow-[#40a7f4]/50" />
-                            </div>
-                        </MarkerContent>
-                        <MarkerLabel
-                            position="top"
-                            className="rounded-full bg-background/85 px-2 py-0.5 text-[10px] font-semibold backdrop-blur"
-                        >
-                            Inicio
-                        </MarkerLabel>
-                    </MapMarker>
+            {/* Titles for routes and sectors */}
+            {sortedLinearFeatures.map((feature) => {
+                const coordinates = getRenderableCoordinates(feature, resolvedRoutes)
+                const sectionPolygon = feature.type === 'section'
+                    ? getSectionPolygonCoordinates(feature, resolvedRoutes)
+                    : []
+                
+                // Fallback to midpoint if centroid fails for any reason
+                const computedCentroid = centroid(sectionPolygon)
+                const anchor = feature.type === 'section' ? (computedCentroid ?? midpoint(coordinates)) : midpoint(coordinates)
+                if (!anchor) return null
 
+                return (
                     <MapMarker
-                        longitude={selectedRouteCoordinates[selectedRouteCoordinates.length - 1]?.[0] ?? 0}
-                        latitude={selectedRouteCoordinates[selectedRouteCoordinates.length - 1]?.[1] ?? 0}
-                        offset={[0, 10]}
+                        key={`label-${feature._id}`}
+                        longitude={anchor[0]}
+                        latitude={anchor[1]}
+                        offset={[0, 6]}
+                        style={{ zIndex: 100 }}
                     >
-                        <MarkerContent>
-                            <div className="relative flex items-center justify-center">
-                                <div className="absolute size-8 rounded-full bg-[#6e00a3]/24 animate-ping animation-duration-[2.2s]" />
-                                <div className="relative size-4 rounded-full border-2 border-white bg-[#6e00a3] shadow-lg shadow-[#6e00a3]/50" />
-                            </div>
+                        <MarkerContent className="pointer-events-none">
+                            <div className="h-1.5 w-1.5 rounded-full bg-white/0" />
                         </MarkerContent>
-                        <MarkerLabel
-                            position="bottom"
-                            className="rounded-full bg-background/85 px-2 py-0.5 text-[10px] font-semibold backdrop-blur"
-                        >
-                            Fin
+                        <MarkerLabel className="rounded-full border border-border/60 bg-background/92 px-2 py-0.5 text-[10px] font-semibold shadow-sm backdrop-blur">
+                            {feature.name}
                         </MarkerLabel>
                     </MapMarker>
-                </>
-            )}
+                )
+            })}
+
+            {/* Route endpoints */}
+            {!editMode && sortedLinearFeatures
+                .filter((feature) => feature.type === 'route')
+                .flatMap((feature) => {
+                    const coordinates = getRenderableCoordinates(feature, resolvedRoutes)
+                    if (coordinates.length < 2) return []
+
+                    const start = coordinates[0]
+                    const end = coordinates[coordinates.length - 1]
+                    if (!start || !end) return []
+
+                    const selected = activeSelectedRouteId === feature._id
+
+                    return [
+                        <MapMarker
+                            key={`route-start-${feature._id}`}
+                            longitude={start[0]}
+                            latitude={start[1]}
+                            offset={[0, 10]}
+                        >
+                            <MarkerContent>
+                                <div className="relative flex items-center justify-center">
+                                    <div className={`absolute rounded-full bg-[#40a7f4]/24 ${selected ? 'size-8 animate-ping' : 'size-6'}`} />
+                                    <div className="relative size-3.5 rounded-full border-2 border-white bg-[#40a7f4] shadow-lg shadow-[#40a7f4]/45" />
+                                </div>
+                            </MarkerContent>
+                            <MarkerLabel
+                                position="top"
+                                className="rounded-full bg-background/88 px-2 py-0.5 text-[10px] font-semibold backdrop-blur"
+                            >
+                                Inicio
+                            </MarkerLabel>
+                        </MapMarker>,
+                        <MapMarker
+                            key={`route-end-${feature._id}`}
+                            longitude={end[0]}
+                            latitude={end[1]}
+                            offset={[0, 10]}
+                        >
+                            <MarkerContent>
+                                <div className="relative flex items-center justify-center">
+                                    <div className={`absolute rounded-full bg-[#6e00a3]/24 ${selected ? 'size-8 animate-ping' : 'size-6'}`} />
+                                    <div className="relative size-3.5 rounded-full border-2 border-white bg-[#6e00a3] shadow-lg shadow-[#6e00a3]/45" />
+                                </div>
+                            </MarkerContent>
+                            <MarkerLabel
+                                position="bottom"
+                                className="rounded-full bg-background/88 px-2 py-0.5 text-[10px] font-semibold backdrop-blur"
+                            >
+                                Llegada
+                            </MarkerLabel>
+                        </MapMarker>,
+                    ]
+                })}
 
             {/* Point markers */}
             {editMode || !clusteringEnabled ? (
                 pointFeatures.map((feature) => {
                     const [lng, lat] = feature._coords as [number, number]
-                    const color = categoryColor(feature.category, categories)
+                    const color = categoryColor(feature.subcategory || feature.category, categories)
                     const duplicateReady = armedDuplicatePointId === feature._id
                     const duplicateDragging = dragDuplicatePointId === feature._id
 
@@ -488,7 +794,7 @@ export function MapFeatureLayers({
                                 onOpenFeatureInfoAction(feature._id)
                             }}
                         >
-                            <MarkerContent>
+                            <MarkerContent className="animate-in fade-in-0 zoom-in-75 duration-300">
                                 <div
                                     className="relative flex items-center justify-center select-none"
                                     style={{
@@ -608,7 +914,7 @@ export function MapFeatureLayers({
                                     onOpenFeatureInfoAction(feature._id)
                                 }}
                             >
-                                <MarkerContent>
+                                <MarkerContent className="animate-in fade-in-0 zoom-in-75 duration-300">
                                     <div className="relative flex items-center justify-center">
                                         <div
                                             className="absolute rounded-full bg-sky-500/20"

@@ -60,7 +60,12 @@ function safeParseStoredState(raw: string): StoredState | null {
                 })
                 return {
                     ...project,
-                    categories: Array.isArray(project.categories) ? project.categories : [],
+                    categories: Array.isArray(project.categories)
+                        ? project.categories.map((category) => ({
+                            ...category,
+                            parentId: category.parentId ?? null,
+                        }))
+                        : [],
                     features,
                 }
             })
@@ -83,6 +88,7 @@ function mergeCategories(base: CategoryDef[], incoming: CategoryDef[]): Category
     for (const category of base) {
         byName.set(category.name, {
             ...category,
+            parentId: category.parentId ?? null,
             subcategories: Array.from(new Set(category.subcategories ?? [])),
         })
     }
@@ -93,6 +99,7 @@ function mergeCategories(base: CategoryDef[], incoming: CategoryDef[]): Category
             byName.set(category.name, {
                 ...category,
                 id: makeId(),
+                parentId: category.parentId ?? null,
                 subcategories: Array.from(new Set(category.subcategories ?? [])),
             })
             continue
@@ -376,6 +383,13 @@ export function useMapEditor() {
     const handleAddPoint = useCallback(
         (point: [number, number]) => {
             setPendingPoints((prev) => {
+                if (drawMode === 'section' && prev.length >= 4) {
+                    const first = prev[0]
+                    const last = prev[prev.length - 1]
+                    const alreadyClosed = !!first && !!last && first[0] === last[0] && first[1] === last[1]
+                    if (alreadyClosed) return prev
+                }
+
                 const next = [...prev, point]
                 if (drawMode === 'point' && next.length === 1) {
                     setFormInitial({
@@ -406,10 +420,32 @@ export function useMapEditor() {
     )
 
     const handleFinishDraw = useCallback(() => {
-        if (pendingPoints.length < 2) return
+        if (!drawMode) return
+
+        if (drawMode === 'route' && pendingPoints.length < 2) return
+
+        if (drawMode === 'section') {
+            if (pendingPoints.length < 4) return
+            const first = pendingPoints[0]
+            const last = pendingPoints[pendingPoints.length - 1]
+            const closed = !!first && !!last && first[0] === last[0] && first[1] === last[1]
+            if (!closed) return
+        }
+
+        const coordinatesForSave =
+            drawMode === 'section' && pendingPoints.length >= 3
+                ? (() => {
+                    const first = pendingPoints[0]
+                    const last = pendingPoints[pendingPoints.length - 1]
+                    if (!first || !last) return pendingPoints
+                    const closed = first[0] === last[0] && first[1] === last[1]
+                    return closed ? pendingPoints : [...pendingPoints, first]
+                })()
+                : pendingPoints
+
         setFormInitial({
-            type: drawMode ?? 'route',
-            coordinates: coordsToWKT(pendingPoints, drawMode ?? 'route'),
+            type: drawMode,
+            coordinates: coordsToWKT(coordinatesForSave, drawMode),
             category: categories[0]?.name ?? '',
         })
         setFormOpen(true)
@@ -457,24 +493,7 @@ export function useMapEditor() {
                 nextFeatures = [...nextFeatures, newFeature]
             }
 
-            let nextCategories = project.categories
-            const selectedCategory = values.category.trim()
-
-            if (selectedCategory && !nextCategories.find((category) => category.name === selectedCategory)) {
-                const color = PALETTE[nextCategories.length % PALETTE.length] ?? '#40A7F4'
-                nextCategories = [...nextCategories, { id: makeId(), name: selectedCategory, color, subcategories: [] }]
-            }
-
-            if (selectedCategory && values.subcategory.trim()) {
-                nextCategories = nextCategories.map((category) => {
-                    if (category.name !== selectedCategory) return category
-                    const set = new Set(category.subcategories ?? [])
-                    set.add(values.subcategory.trim())
-                    return { ...category, subcategories: Array.from(set) }
-                })
-            }
-
-            nextCategories = catsFromFeatures(nextFeatures, nextCategories)
+            const nextCategories = catsFromFeatures(nextFeatures, project.categories)
 
             return {
                 ...project,
@@ -602,13 +621,16 @@ export function useMapEditor() {
         [updateActiveProject],
     )
 
-    const handleAddCategory = useCallback(() => {
+    const handleAddCategory = useCallback((parentId: string | null = null) => {
         updateActiveProject((project) => {
             const name = `Categoria ${project.categories.length + 1}`
             const color = PALETTE[project.categories.length % PALETTE.length] ?? '#40A7F4'
             return {
                 ...project,
-                categories: [...project.categories, { id: makeId(), name, color, subcategories: [] }],
+                categories: [
+                    ...project.categories,
+                    { id: makeId(), name, color, parentId, subcategories: [] },
+                ],
             }
         })
     }, [updateActiveProject])
@@ -666,6 +688,128 @@ export function useMapEditor() {
         })
     }, [updateActiveProject])
 
+    const handleSetCategoryParent = useCallback((id: string, parentId: string | null) => {
+        if (id === parentId) return
+
+        updateActiveProject((project) => {
+            const byId = new Map(project.categories.map((category) => [category.id, category]))
+
+            // Avoid cycles in hierarchy
+            let current = parentId
+            while (current) {
+                if (current === id) return project
+                current = byId.get(current)?.parentId ?? null
+            }
+
+            return {
+                ...project,
+                categories: project.categories.map((category) =>
+                    category.id === id ? { ...category, parentId } : category,
+                ),
+            }
+        })
+    }, [updateActiveProject])
+
+    const handleSetFeatureCategory = useCallback((id: string, categoryId: string | null) => {
+        updateActiveProject((project) => {
+            const feature = project.features.find(f => f._id === id)
+            if (!feature) return project
+
+            const targetCategory = categoryId ? project.categories.find(c => c.id === categoryId) : null
+            
+            // Si el drop fue directo en raíz o sin categoría
+            if (!targetCategory) {
+                return {
+                    ...project,
+                    features: project.features.map(f => 
+                        f._id === id ? { 
+                            ...f, 
+                            category: '', 
+                            subcategory: '',
+                            _raw: { ...f._raw, category: '', subcategory: '' }
+                        } : f
+                    )
+                }
+            }
+
+            // Identificar el padreen caso de ser subcategoría
+            let categoryName = targetCategory.name
+            let subcategoryName = ''
+
+            if (targetCategory.parentId) {
+                const parent = project.categories.find(c => c.id === targetCategory.parentId)
+                if (parent) {
+                    categoryName = parent.name
+                    subcategoryName = targetCategory.name
+                }
+            }
+
+            return {
+                ...project,
+                features: project.features.map(f => 
+                    f._id === id ? {
+                        ...f,
+                        category: categoryName,
+                        subcategory: subcategoryName,
+                        _raw: { ...f._raw, category: categoryName, subcategory: subcategoryName }
+                    } : f
+                )
+            }
+        })
+    }, [updateActiveProject])
+
+    const handleReorderCategory = useCallback(
+        (draggedId: string, targetId: string, placement: 'before' | 'after' | 'inside') => {
+            if (draggedId === targetId) return
+
+            updateActiveProject((project) => {
+                const categories = [...project.categories]
+                const draggedIndex = categories.findIndex((category) => category.id === draggedId)
+                const targetIndex = categories.findIndex((category) => category.id === targetId)
+                if (draggedIndex < 0 || targetIndex < 0) return project
+
+                const dragged = categories[draggedIndex]
+                const target = categories[targetIndex]
+                if (!dragged || !target) return project
+
+                const byId = new Map(categories.map((category) => [category.id, category]))
+                let current: string | null = target.id
+                while (current) {
+                    if (current === dragged.id) return project
+                    current = byId.get(current)?.parentId ?? null
+                }
+
+                const withoutDragged = categories.filter((category) => category.id !== dragged.id)
+                const normalizedDragged = {
+                    ...dragged,
+                    parentId:
+                        placement === 'inside'
+                            ? target.id
+                            : (target.parentId ?? null),
+                }
+
+                if (placement === 'inside') {
+                    return {
+                        ...project,
+                        categories: [...withoutDragged, normalizedDragged],
+                    }
+                }
+
+                const insertAt = withoutDragged.findIndex((category) => category.id === target.id)
+                if (insertAt < 0) return project
+
+                const finalIndex = placement === 'before' ? insertAt : insertAt + 1
+                withoutDragged.splice(finalIndex, 0, normalizedDragged)
+
+                return {
+                    ...project,
+                    categories: withoutDragged,
+                }
+            })
+        },
+        [updateActiveProject],
+    )
+
     const handleDeleteCategory = useCallback((id: string) => {
         updateActiveProject((project) => ({
             ...project,
@@ -687,8 +831,8 @@ export function useMapEditor() {
 
     const handleExport = useCallback(() => {
         if (!features.length) return
-        downloadCSV(features, `${(activeProject?.name ?? 'proyecto').replace(/\s+/g, '_').toLowerCase()}_export.csv`)
-    }, [features, activeProject])
+        downloadCSV(features, categories, `${(activeProject?.name ?? 'proyecto').replace(/\s+/g, '_').toLowerCase()}_export.csv`)
+    }, [features, categories, activeProject])
 
     const toggleType = useCallback((type: FeatureType) => {
         setActiveTypes((prev) => {
@@ -769,6 +913,9 @@ export function useMapEditor() {
         handleRenameCategory,
         handleRecolorCategory,
         handleMoveCategory,
+        handleSetCategoryParent,
+        handleSetFeatureCategory,
+        handleReorderCategory,
         handleDeleteCategory,
         handleImportRows,
         handleExport,

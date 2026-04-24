@@ -45,28 +45,51 @@ export function MapDrawLayer({ drawMode, pendingPoints, onAddPoint }: MapDrawLay
         )
     }
 
+    const firstPoint = pendingPoints[0]
+    const lastPoint = pendingPoints[pendingPoints.length - 1]
+    const sectionClosed = drawMode === 'section' && pendingPoints.length >= 4 && !!firstPoint && !!lastPoint
+        && firstPoint[0] === lastPoint[0] && firstPoint[1] === lastPoint[1]
+    const sectionPreviewPath = drawMode === 'section' && pendingPoints.length >= 3 && !sectionClosed && firstPoint
+        ? [...pendingPoints, firstPoint]
+        : pendingPoints
+
     return (
         <>
             {pendingPoints.length >= 2 && (
                 <MapRoute
                     id="__draw-preview__"
-                    coordinates={pendingPoints}
+                    coordinates={sectionPreviewPath}
                     color="#40A7F4"
                     width={3}
                     opacity={0.75}
                     dashArray={[6, 4]}
+                    animateOnMount
                 />
             )}
             {pendingPoints.map((point, index) => (
                 <MapMarker key={`${point[0]}-${point[1]}-${index}`} longitude={point[0]} latitude={point[1]}>
                     <MarkerContent>
                         <div
+                            onClick={() => {
+                                if (drawMode !== 'section' || index !== 0 || pendingPoints.length < 3) return
+                                const first = pendingPoints[0]
+                                if (!first) return
+                                onAddPoint(first)
+                            }}
                             className="rounded-full border border-white shadow"
                             style={{
-                                width: index === 0 ? 10 : 8,
-                                height: index === 0 ? 10 : 8,
+                                width: index === 0 ? 11 : 8,
+                                height: index === 0 ? 11 : 8,
                                 backgroundColor: index === 0 ? '#6E00A3' : '#40A7F4',
+                                cursor: drawMode === 'section' && index === 0 && pendingPoints.length >= 3
+                                    ? 'pointer'
+                                    : 'default',
                             }}
+                            title={
+                                drawMode === 'section' && index === 0 && pendingPoints.length >= 3
+                                    ? 'Clic para cerrar polígono'
+                                    : undefined
+                            }
                         />
                     </MarkerContent>
                 </MapMarker>

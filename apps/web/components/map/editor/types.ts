@@ -6,6 +6,7 @@ export interface CategoryDef {
     id: string
     name: string
     color: string
+    parentId?: string | null
     subcategories?: string[]
 }
 
