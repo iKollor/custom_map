@@ -178,6 +178,14 @@ function centroid(coordinates: [number, number][]) {
     return [sum[0] / unique.length, sum[1] / unique.length] as [number, number]
 }
 
+function isPointCoords(coords: ParsedFeature['_coords']): coords is [number, number] {
+    return Array.isArray(coords) && typeof coords[0] === 'number'
+}
+
+function isLineCoords(coords: ParsedFeature['_coords']): coords is [number, number][] {
+    return Array.isArray(coords) && Array.isArray(coords[0])
+}
+
 function LineFeatureTooltip({
     feature,
     categories,
@@ -952,8 +960,20 @@ export function MapFeatureLayers({
 
             {/* Forced Tooltips */}
             {[...pointFeatures, ...linearFeatures].filter((f) => forcedTooltipTypes.has(f.type) || forcedTooltipCategories.has(f.category)).map((feature) => {
-                const coordinates = feature.type === 'point' ? (feature._coords as [number, number]) : centroid(feature.type === 'section' ? getSectionPolygonCoordinates(feature, resolvedRoutes) : getRenderableCoordinates(feature, resolvedRoutes)) ?? (feature._coords[0] as [number, number] | undefined) ?? [0, 0]
+                let coordinates: [number, number] | null = null
+
+                if (feature.type === 'point' && isPointCoords(feature._coords)) {
+                    coordinates = feature._coords
+                } else if ((feature.type === 'route' || feature.type === 'section') && isLineCoords(feature._coords)) {
+                    const poly = feature.type === 'section' 
+                        ? getSectionPolygonCoordinates(feature, resolvedRoutes) 
+                        : getRenderableCoordinates(feature, resolvedRoutes)
+                    
+                    coordinates = centroid(poly) ?? feature._coords[0] ?? null
+                }
+
                 if (!coordinates) return null
+
                 return (
                     <MapPopup
                         key={`${feature._id}-force-tooltip`}
@@ -966,7 +986,7 @@ export function MapFeatureLayers({
                         className="pointer-events-none border-border/70 bg-background/95 p-2.5 shadow-lg"
                     >
                         {feature.type === 'point' ? (
-                            <FeatureTooltip feature={feature} coordinates={coordinates as [number, number]} categories={categories} />
+                            <FeatureTooltip feature={feature} coordinates={coordinates} categories={categories} />
                         ) : (
                             <LineFeatureTooltip
                                 feature={feature}
