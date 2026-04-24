@@ -113,7 +113,7 @@ function lineDistanceKm(coordinates: [number, number][]) {
 function findMetricValue(feature: ParsedFeature, keys: string[]) {
     for (const key of keys) {
         const customValue = feature.customFields?.[key]
-        if (customValue && customValue.trim()) return customValue.trim()
+        if (customValue && String(customValue).trim()) return String(customValue).trim()
         const rawValue = feature._raw?.[key]
         if (rawValue && String(rawValue).trim()) return String(rawValue).trim()
     }
