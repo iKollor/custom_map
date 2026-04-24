@@ -151,6 +151,7 @@ export function MapFeatureLayers({
     const [dragDuplicatePointId, setDragDuplicatePointId] = useState<string | null>(null)
     const longPressTimerRef = useRef<number | null>(null)
     const longPressCandidateRef = useRef<string | null>(null)
+    const touchActiveRef = useRef<string | null>(null)
 
     const clearLongPressTimer = () => {
         if (longPressTimerRef.current === null) return
@@ -164,12 +165,14 @@ export function MapFeatureLayers({
 
     const handlePointPointerDown = (featureId: string, event: PointerEvent) => {
         if (event.pointerType === 'mouse') {
-            setArmedDuplicatePointId(event.ctrlKey ? featureId : null)
+            touchActiveRef.current = null
+            setArmedDuplicatePointId(event.altKey ? featureId : null)
             return
         }
 
-        if (event.pointerType !== 'touch') return
+        if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return
 
+        touchActiveRef.current = featureId
         setArmedDuplicatePointId(null)
         longPressCandidateRef.current = featureId
         clearLongPressTimer()
@@ -177,12 +180,19 @@ export function MapFeatureLayers({
         longPressTimerRef.current = window.setTimeout(() => {
             if (longPressCandidateRef.current !== featureId) return
             setArmedDuplicatePointId(featureId)
+            // Haptic feedback when duplicate is armed (browsers that support Vibration API)
+            if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                try { navigator.vibrate(18) } catch { /* no-op */ }
+            }
         }, LONG_PRESS_DUPLICATE_MS)
     }
 
     const handlePointPointerRelease = (featureId: string) => {
         if (longPressCandidateRef.current === featureId) {
             longPressCandidateRef.current = null
+        }
+        if (touchActiveRef.current === featureId) {
+            touchActiveRef.current = null
         }
         clearLongPressTimer()
 
@@ -326,6 +336,10 @@ export function MapFeatureLayers({
                             }}
                             onContextMenu={(event) => {
                                 event.preventDefault()
+                                // On touch, the browser fires 'contextmenu' around ~500ms into a long-press,
+                                // which would interfere with the long-press-to-duplicate gesture. Ignore it
+                                // and let the long-press flow handle the interaction.
+                                if (touchActiveRef.current === feature._id) return
                                 onSelectRouteAction(null)
                                 onOpenContextMenuAction({
                                     featureId: feature._id,
@@ -355,7 +369,15 @@ export function MapFeatureLayers({
                             }}
                         >
                             <MarkerContent>
-                                <div className="relative flex items-center justify-center">
+                                <div
+                                    className="relative flex items-center justify-center select-none"
+                                    style={{
+                                        touchAction: 'none',
+                                        WebkitTouchCallout: 'none',
+                                        WebkitUserSelect: 'none',
+                                        userSelect: 'none',
+                                    }}
+                                >
                                     <div
                                         className="absolute size-8 rounded-full opacity-70"
                                         style={{ backgroundColor: `${color}22` }}
@@ -371,8 +393,8 @@ export function MapFeatureLayers({
                                         />
                                     )}
                                     {duplicateReady && (
-                                        <div className="pointer-events-none absolute -top-8 rounded-full border border-sky-200/70 bg-sky-500/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow-lg shadow-sky-700/30">
-                                            {duplicateDragging ? 'Duplicando...' : 'Listo: arrastra'}
+                                        <div className="pointer-events-none absolute -top-8 whitespace-nowrap rounded-full border border-sky-200/70 bg-sky-500/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow-lg shadow-sky-700/30">
+                                            {duplicateDragging ? 'Duplicando…' : 'Listo: arrastra'}
                                         </div>
                                     )}
                                 </div>

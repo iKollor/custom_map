@@ -12,10 +12,10 @@ export const MAP_COLORS = {
     white: "#ffffff",
 } as const;
 
-/** Tema claro/oscuro por defecto (basemaps de CartoCDN). */
+/** Tema claro/oscuro por defecto (OpenFreeMap). */
 export const DEFAULT_BASEMAPS = {
-    dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-    light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+    dark: "https://tiles.openfreemap.org/styles/liberty",
+    light: "https://tiles.openfreemap.org/styles/liberty",
 } as const;
 
 /** Defaults para `MapArc`. */

@@ -63,3 +63,14 @@ model Feature {
   @@index([subcategoryId])
   @@map("features")
 }
+
+// Stores the full editor state (projects, categories, features) as JSON.
+// Single-tenant app uses a fixed id ("default"); schema allows future multi-user.
+model ProjectSnapshot {
+  id        String   @id
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("project_snapshots")
+}

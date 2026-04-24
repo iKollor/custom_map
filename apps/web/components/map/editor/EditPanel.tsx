@@ -57,6 +57,7 @@ interface EditPanelProps {
     onSelectDrawMode: (mode: DrawMode) => void
     onFinishDraw: () => void
     onCancelDraw: () => void
+    onAddPoint: (point: [number, number]) => void
     onEditFeature: (feature: ParsedFeature) => void
     onDeleteFeature: (id: string) => void
     onAddCategory: () => void
@@ -74,6 +75,7 @@ export function EditPanel({
     onSelectDrawMode,
     onFinishDraw,
     onCancelDraw,
+    onAddPoint,
     onEditFeature,
     onDeleteFeature,
     onAddCategory,
@@ -87,6 +89,32 @@ export function EditPanel({
     const [renameValue, setRenameValue] = useState('')
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
     const [colorPickerId, setColorPickerId] = useState<string | null>(null)
+    const [coordInput, setCoordInput] = useState('')
+    const [coordError, setCoordError] = useState<string | null>(null)
+
+    function parseLatLng(value: string): [number, number] | null {
+        const parts = value
+            .split(/[,;\s]+/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        if (parts.length !== 2) return null
+        const lat = Number(parts[0])
+        const lng = Number(parts[1])
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+        return [lng, lat]
+    }
+
+    function handleSubmitCoord() {
+        const parsed = parseLatLng(coordInput)
+        if (!parsed) {
+            setCoordError('Formato invalido. Usa: lat, lng')
+            return
+        }
+        setCoordError(null)
+        setCoordInput('')
+        onAddPoint(parsed)
+    }
 
     const tabs = [
         { key: 'create' as const, label: 'Crear', icon: <Plus className="h-3.5 w-3.5" /> },
@@ -168,6 +196,40 @@ export function EditPanel({
                                 <div className="flex items-start gap-2 rounded-lg border border-[#40a7f4]/25 bg-[#40a7f4]/10 px-3 py-2.5">
                                     <MousePointerClick className="mt-0.5 h-4 w-4 shrink-0 text-[#1679bf] dark:text-[#7ec8ff]" />
                                     <p className="text-xs text-[#1a5f96] dark:text-[#8fd2ff]">{drawInstructions[drawMode]}</p>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground">
+                                        O ingresa coordenadas (lat, lng)
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            value={coordInput}
+                                            onChange={(e) => {
+                                                setCoordInput(e.target.value)
+                                                if (coordError) setCoordError(null)
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault()
+                                                    handleSubmitCoord()
+                                                }
+                                            }}
+                                            placeholder="-2.197422, -79.938401"
+                                            className="h-8 font-mono text-xs"
+                                        />
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={handleSubmitCoord}
+                                            disabled={!coordInput.trim()}
+                                        >
+                                            <Plus className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </div>
+                                    {coordError && (
+                                        <p className="text-xs text-red-500">{coordError}</p>
+                                    )}
                                 </div>
 
                                 {pendingPoints.length > 0 && (

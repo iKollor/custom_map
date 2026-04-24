@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Locate, Maximize, Minus, Plus, Layers } from "lucide-react";
+import { Loader2, Locate, Maximize, Minus, Plus, Layers, Search } from "lucide-react";
 
 import { cn } from "@workspace/ui/lib/utils";
 
@@ -12,6 +12,7 @@ type MapControlsProps = {
     showZoom?: boolean;
     showCompass?: boolean;
     showLocate?: boolean;
+    showSearch?: boolean;
     showFullscreen?: boolean;
     showSatellite?: boolean;
     isSatellite?: boolean;
@@ -70,6 +71,7 @@ function MapControls({
     showZoom = true,
     showCompass = false,
     showLocate = false,
+    showSearch = false,
     showFullscreen = false,
     showSatellite = false,
     isSatellite = false,
@@ -79,6 +81,7 @@ function MapControls({
 }: MapControlsProps) {
     const { map } = useMap();
     const [waitingForLocation, setWaitingForLocation] = useState(false);
+    const [searchingPlace, setSearchingPlace] = useState(false);
 
     const handleZoomIn = useCallback(() => {
         map?.zoomTo(map.getZoom() + 1, { duration: 300 });
@@ -127,6 +130,59 @@ function MapControls({
         }
     }, [map]);
 
+    const handleSearch = useCallback(async () => {
+        const term = window.prompt("Buscar lugar o dirección");
+        if (!term || !term.trim()) return;
+
+        setSearchingPlace(true);
+        try {
+            const params = new URLSearchParams({
+                q: term.trim(),
+                format: "jsonv2",
+                limit: "1",
+                "accept-language": "es",
+            });
+
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+                {
+                    headers: {
+                        Accept: "application/json",
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error(`Search request failed (${response.status})`);
+            }
+
+            const results = (await response.json()) as Array<{ lon: string; lat: string }>;
+            const first = results[0];
+            if (!first) {
+                window.alert("No se encontraron resultados para la búsqueda.");
+                return;
+            }
+
+            const lng = Number.parseFloat(first.lon);
+            const lat = Number.parseFloat(first.lat);
+            if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+                window.alert("La ubicación encontrada no es válida.");
+                return;
+            }
+
+            map?.flyTo({
+                center: [lng, lat],
+                zoom: Math.max(map.getZoom(), 14),
+                duration: 1200,
+            });
+        } catch (error) {
+            console.error("Error searching location:", error);
+            window.alert("No se pudo completar la búsqueda. Inténtalo de nuevo.");
+        } finally {
+            setSearchingPlace(false);
+        }
+    }, [map]);
+
     return (
         <div
             className={cn(
@@ -161,6 +217,23 @@ function MapControls({
                             <Loader2 className="size-4 animate-spin" />
                         ) : (
                             <Locate className="size-4" />
+                        )}
+                    </ControlButton>
+                </ControlGroup>
+            )}
+            {showSearch && (
+                <ControlGroup>
+                    <ControlButton
+                        onClick={() => {
+                            void handleSearch();
+                        }}
+                        label="Search place"
+                        disabled={searchingPlace}
+                    >
+                        {searchingPlace ? (
+                            <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                            <Search className="size-4" />
                         )}
                     </ControlButton>
                 </ControlGroup>

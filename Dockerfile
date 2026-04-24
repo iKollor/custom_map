@@ -65,6 +65,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# postgresql-client for running raw SQL migrations at startup
+RUN apk add --no-cache postgresql-client bash
+
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
@@ -76,9 +79,18 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 
+# Copy prisma schema + migrations so we can apply them at container start
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/prisma ./apps/web/prisma
+
+# Entrypoint applies SQL migrations (idempotent) before starting the server
+COPY --chown=nextjs:nodejs docker/web-entrypoint.sh /usr/local/bin/web-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/web-entrypoint.sh && \
+    chmod +x /usr/local/bin/web-entrypoint.sh
+
 USER nextjs
 
 EXPOSE 3000
 
+ENTRYPOINT ["/usr/local/bin/web-entrypoint.sh"]
 # server.js is at apps/web/server.js inside the standalone output
 CMD ["node", "apps/web/server.js"]

@@ -112,6 +112,7 @@ export default function MapClient({ username }: { username: string }) {
                     }}
                     onFinishDraw={editor.handleFinishDraw}
                     onCancelDraw={editor.handleCancelDraw}
+                    onAddPoint={editor.handleAddPoint}
                     onEditFeature={editor.handleEditFeature}
                     onDeleteFeature={editor.handleDeleteFeature}
                     onAddCategory={editor.handleAddCategory}
@@ -132,6 +133,7 @@ export default function MapClient({ username }: { username: string }) {
                     showZoom
                     showCompass
                     showLocate
+                    showSearch
                     showSatellite
                     isSatellite={mapConfig.isSatelliteView}
                     onToggleSatellite={actions.toggleSatelliteView}

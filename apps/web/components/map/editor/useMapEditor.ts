@@ -109,10 +109,18 @@ function mergeCategories(base: CategoryDef[], incoming: CategoryDef[]): Category
     return Array.from(byName.values())
 }
 
+export type SyncStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error' | 'offline'
+
 export function useMapEditor() {
     const [projects, setProjects] = useState<MapProject[]>(() => [createProject('Proyecto principal')])
     const [activeProjectId, setActiveProjectId] = useState<string>(() => '')
     const csvLoadedProjectsRef = useRef<Set<string>>(new Set())
+    const hydratedRef = useRef(false)
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const pendingPayloadRef = useRef<StoredState | null>(null)
+    const inFlightRef = useRef(false)
+    const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
+    const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
 
     const [activeTypes, setActiveTypes] = useState<Set<FeatureType>>(new Set())
     const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set())
@@ -127,18 +135,60 @@ export function useMapEditor() {
     const [formInitial, setFormInitial] = useState<Partial<FeatureFormValues>>({})
 
     useEffect(() => {
-        const stored = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null
-        const parsed = stored ? safeParseStoredState(stored) : null
+        let cancelled = false
 
-        if (parsed) {
-            setProjects(parsed.projects)
-            setActiveProjectId(parsed.activeProjectId)
-            return
+        const applyLocalFallback = () => {
+            const stored = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null
+            const parsed = stored ? safeParseStoredState(stored) : null
+
+            if (parsed) {
+                setProjects(parsed.projects)
+                setActiveProjectId(parsed.activeProjectId)
+                return
+            }
+
+            const defaultProject = createProject('Proyecto principal')
+            setProjects([defaultProject])
+            setActiveProjectId(defaultProject.id)
         }
 
-        const defaultProject = createProject('Proyecto principal')
-        setProjects([defaultProject])
-        setActiveProjectId(defaultProject.id)
+        setSyncStatus('loading')
+
+        fetch('/api/projects', { credentials: 'same-origin', cache: 'no-store' })
+            .then(async (response) => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`)
+                return response.json() as Promise<{ data: unknown; updatedAt: string | null }>
+            })
+            .then((result) => {
+                if (cancelled) return
+
+                const serverState =
+                    result.data && typeof result.data === 'object'
+                        ? safeParseStoredState(JSON.stringify(result.data))
+                        : null
+
+                if (serverState) {
+                    setProjects(serverState.projects)
+                    setActiveProjectId(serverState.activeProjectId)
+                    setLastSyncedAt(result.updatedAt)
+                    setSyncStatus('saved')
+                } else {
+                    applyLocalFallback()
+                    setSyncStatus('idle')
+                }
+
+                hydratedRef.current = true
+            })
+            .catch(() => {
+                if (cancelled) return
+                applyLocalFallback()
+                hydratedRef.current = true
+                setSyncStatus('offline')
+            })
+
+        return () => {
+            cancelled = true
+        }
     }, [])
 
     // Load routes from CSV if active project is empty (once per project id)
@@ -178,6 +228,51 @@ export function useMapEditor() {
         if (!activeProjectId || !projects.length || typeof window === 'undefined') return
         const payload: StoredState = { activeProjectId, projects }
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+
+        // Only push to server after the initial hydration (avoid overwriting
+        // server state with the empty default before we loaded it).
+        if (!hydratedRef.current) return
+
+        pendingPayloadRef.current = payload
+
+        const flush = async () => {
+            if (inFlightRef.current) return
+            const payloadToSend = pendingPayloadRef.current
+            if (!payloadToSend) return
+
+            inFlightRef.current = true
+            pendingPayloadRef.current = null
+            setSyncStatus('saving')
+
+            try {
+                const response = await fetch('/api/projects', {
+                    method: 'PUT',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payloadToSend),
+                })
+
+                if (!response.ok) throw new Error(`HTTP ${response.status}`)
+                const result = (await response.json()) as { updatedAt?: string }
+                setLastSyncedAt(result.updatedAt ?? new Date().toISOString())
+                setSyncStatus('saved')
+            } catch {
+                setSyncStatus('offline')
+            } finally {
+                inFlightRef.current = false
+                // If more changes piled up while we were saving, flush again.
+                if (pendingPayloadRef.current) {
+                    setTimeout(flush, 0)
+                }
+            }
+        }
+
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = setTimeout(flush, 800)
+
+        return () => {
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+        }
     }, [activeProjectId, projects])
 
     const activeProject = useMemo(
@@ -636,6 +731,8 @@ export function useMapEditor() {
         pendingPoints,
         formOpen,
         formInitial,
+        syncStatus,
+        lastSyncedAt,
         setFiltersOpen,
         setImportOpen,
         setDrawMode,

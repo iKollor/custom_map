@@ -14,9 +14,13 @@ const SATELLITE_STYLE: StyleSpecification = {
     sources: {
         satellite: {
             type: 'raster',
-            tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tiles: [
+                process.env.NEXT_PUBLIC_MAP_SATELLITE_TILES ??
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            ],
             tileSize: 256,
             attribution:
+                process.env.NEXT_PUBLIC_MAP_SATELLITE_ATTRIBUTION ??
                 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
         },
     },
@@ -90,9 +94,7 @@ export function useMapClientController() {
                 ? { light: SATELLITE_STYLE, dark: SATELLITE_STYLE }
                 : {
                     light: process.env.NEXT_PUBLIC_MAP_STYLE,
-                    dark:
-                        process.env.NEXT_PUBLIC_MAP_STYLE_DARK ??
-                        'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+                    dark: process.env.NEXT_PUBLIC_MAP_STYLE_DARK ?? process.env.NEXT_PUBLIC_MAP_STYLE,
                 },
         [isSatelliteView],
     )
