@@ -110,7 +110,7 @@ export function ImportModal({ open, onClose, onImport }: ImportModalProps) {
                             onDrop={handleDrop}
                             onDragOver={(event) => event.preventDefault()}
                             onClick={() => fileInputRef.current?.click()}
-                            className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/20 p-8 text-center transition-colors hover:border-blue-400 hover:bg-blue-50/40"
+                            className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/20 p-8 text-center transition-colors hover:border-primary/50 hover:bg-primary/5"
                         >
                             <FileText className="h-8 w-8 text-muted-foreground" />
                             <div>

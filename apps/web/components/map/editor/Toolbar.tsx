@@ -260,7 +260,7 @@ function DesktopRightGroup({ username, onLogout, clusteringEnabled, onToggleClus
                                 variant="ghost"
                                 className="h-8 gap-1.5 px-2.5 text-xs font-medium"
                             >
-                                <User className="h-3.5 w-3.5 text-blue-600" />
+                                <User className="h-3.5 w-3.5 text-primary" />
                                 {username}
                                 <ChevronDown className="h-3 w-3 opacity-60" />
                             </Button>
@@ -330,7 +330,7 @@ function MobileBar({
                     <DrawerContent className="p-0">
                         <DrawerHeader className="border-b">
                             <DrawerTitle className="flex items-center gap-2">
-                                <User className="h-4 w-4 text-blue-600" />
+                                <User className="h-4 w-4 text-primary" />
                                 {username}
                             </DrawerTitle>
                             <DrawerDescription className="truncate">

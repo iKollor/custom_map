@@ -1,11 +1,20 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { checkCredentials, getSessionToken, SESSION_COOKIE } from '@/lib/auth'
+import { checkCredentials, getSessionToken, SESSION_COOKIE, LoginSchema } from '@/lib/auth'
 
 export async function POST(request: Request) {
     try {
-        const body = await request.json() as { username?: string; password?: string }
-        const { username = '', password = '' } = body
+        const bodyRaw = await request.json()
+        const parseResult = LoginSchema.safeParse(bodyRaw)
+
+        if (!parseResult.success) {
+            return NextResponse.json(
+                { error: 'Credenciales inválidas o faltantes', details: parseResult.error.format() },
+                { status: 400 }
+            )
+        }
+
+        const { username, password } = parseResult.data
 
         if (!checkCredentials(username, password)) {
             return NextResponse.json(

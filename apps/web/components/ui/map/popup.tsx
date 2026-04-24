@@ -72,10 +72,11 @@ function MapPopup({
     }, []);
 
     useEffect(() => {
-        if (wrapperClassName === undefined) return;
-        popup.addClassName(wrapperClassName);
+        if (!wrapperClassName) return;
+        const classes = wrapperClassName.split(' ').filter(Boolean);
+        classes.forEach(c => popup.addClassName(c));
         return () => {
-            popup.removeClassName(wrapperClassName);
+            classes.forEach(c => popup.removeClassName(c));
         };
     }, [popup, wrapperClassName]);
 

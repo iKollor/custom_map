@@ -1,6 +1,6 @@
 import Papa from 'papaparse'
 import { FEATURE_TYPES, PALETTE } from './constants'
-import type { CategoryDef, CsvRow, FeatureType, ParsedFeature } from './types'
+import { ParsedFeatureSchema, type CategoryDef, type CsvRow, type FeatureType, type ParsedFeature } from './types'
 
 const FEATURE_TYPE_SET = new Set(FEATURE_TYPES)
 
@@ -94,18 +94,28 @@ export function isPointCoordinates(coords: ParsedFeature['_coords']): coords is 
 
 export function csvRowsToParsed(rows: CsvRow[]): ParsedFeature[] {
     return rows
-        .filter((r) => r['name'] && r['coordinates'])
-        .map((r, i) => ({
-            type: normalizeFeatureType(r['type'], r['coordinates']),
-            _id: `csv-${i}-${makeId()}`,
-            _coords: parseCoordinates(r['coordinates'] ?? '', r['type'] ?? ''),
-            _raw: r,
-            name: r['name'] ?? '',
-            category: r['category'] ?? '',
-            subcategory: r['subcategory'] ?? '',
-            coordinates: r['coordinates'] ?? '',
-            description: r['description'] ?? '',
-        }))
+        .map((r, i) => {
+            const rawType = normalizeFeatureType(r['type'], r['coordinates'])
+            
+            const rawBody = {
+                type: rawType,
+                _id: `csv-${i}-${makeId()}`,
+                _coords: parseCoordinates(r['coordinates'] ?? '', rawType),
+                _raw: r,
+                name: r['name'] ?? '',
+                category: r['category'] ?? '',
+                subcategory: r['subcategory'] ?? '',
+                coordinates: r['coordinates'] ?? '',
+                description: r['description'] ?? '',
+            }
+
+            const parsed = ParsedFeatureSchema.safeParse(rawBody)
+            if (parsed.success) return parsed.data
+            
+            console.warn(`[csvRowsToParsed] Dropping invalid feature row ${i}:`, parsed.error.issues)
+            return null
+        })
+        .filter((f): f is ParsedFeature => f !== null)
 }
 
 export function downloadCSV(features: ParsedFeature[], categories: CategoryDef[], filename: string) {

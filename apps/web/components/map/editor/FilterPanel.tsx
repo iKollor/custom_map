@@ -113,15 +113,15 @@ function FilterBody({
                                         onToggleType(type)
                                     }
                                 }}
-                                className="flex cursor-pointer items-center justify-between rounded-xl border border-transparent px-2.5 py-2 transition-all hover:border-sky-200 hover:bg-sky-50/70"
+                                className="group flex cursor-pointer items-center justify-between rounded-xl border border-transparent px-2.5 py-2 transition-all hover:bg-primary/5 dark:hover:bg-primary/10"
                             >
                                 <span className="flex items-center gap-2 text-sm text-foreground">
-                                    <span className={active ? 'text-sky-600' : 'text-muted-foreground'}>
+                                    <span className={active ? 'text-primary' : 'text-muted-foreground'}>
                                         {TYPE_ICONS[type] ?? <MapPin className="h-3.5 w-3.5" />}
                                     </span>
                                     <span className="capitalize">{TYPE_LABELS[type] ?? type}</span>
                                 </span>
-                                <span className="flex items-center gap-1.5">
+                                <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 sm:opacity-100">
                                     <span className="text-xs text-muted-foreground">{count}</span>
                                     <button
                                         type="button"
@@ -129,12 +129,12 @@ function FilterBody({
                                             e.stopPropagation()
                                             onToggleForcedTooltipType(type)
                                         }}
-                                        className={`rounded-md p-1 transition-colors hover:bg-sky-100 ${tooltipsActive ? 'text-sky-600' : 'text-muted-foreground/40'}`}
+                                        className={`rounded-md p-1 transition-colors hover:bg-primary/10 hover:text-primary ${tooltipsActive ? 'text-primary' : 'text-muted-foreground/40'}`}
                                         title="Mostrar tooltip permanentemente"
                                     >
                                         <MessageSquareText className="h-4 w-4" />
                                     </button>
-                                    <Checkbox checked={active} className="pointer-events-none ml-1" aria-hidden="true" />
+                                    <Checkbox checked={active} className="pointer-events-none ml-1 opacity-100" aria-hidden="true" />
                                 </span>
                             </motion.div>
                         )
@@ -165,16 +165,16 @@ function FilterBody({
                                         onToggleCategory(cat.name)
                                     }
                                 }}
-                                className="flex cursor-pointer items-center justify-between rounded-xl border border-transparent px-2.5 py-2 transition-all hover:border-sky-200 hover:bg-sky-50/70"
+                                className="group flex cursor-pointer items-center justify-between rounded-xl border border-transparent px-2.5 py-2 transition-all hover:bg-primary/5 dark:hover:bg-primary/10"
                             >
                                 <span className="flex items-center gap-2 text-sm text-foreground">
                                     <span
-                                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                        className="h-2.5 w-2.5 shrink-0 rounded-full shadow-sm"
                                         style={{ backgroundColor: active ? cat.color : '#D1D5DB' }}
                                     />
                                     {cat.name}
                                 </span>
-                                <span className="flex items-center gap-1.5">
+                                <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 sm:opacity-100">
                                     <span className="text-xs text-muted-foreground">{count}</span>
                                     <button
                                         type="button"
@@ -182,12 +182,12 @@ function FilterBody({
                                             e.stopPropagation()
                                             onToggleForcedTooltipCategory(cat.name)
                                         }}
-                                        className={`rounded-md p-1 transition-colors hover:bg-sky-100 ${tooltipsActive ? 'text-sky-600' : 'text-muted-foreground/40'}`}
+                                        className={`rounded-md p-1 transition-colors hover:bg-primary/10 hover:text-primary ${tooltipsActive ? 'text-primary' : 'text-muted-foreground/40'}`}
                                         title="Mostrar tooltip permanentemente"
                                     >
                                         <MessageSquareText className="h-4 w-4" />
                                     </button>
-                                    <Checkbox checked={active} className="pointer-events-none ml-1" aria-hidden="true" />
+                                    <Checkbox checked={active} className="pointer-events-none ml-1 opacity-100" aria-hidden="true" />
                                 </span>
                             </motion.div>
                         )

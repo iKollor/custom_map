@@ -1,7 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
+import { z } from 'zod'
 
 import type { ParsedFeature } from './editor'
 import type { ResolvedRouteState } from './map-client-types'
+
+const OsrmResponseSchema = z.object({
+    code: z.string().optional(),
+    routes: z.array(
+        z.object({
+            geometry: z.object({
+                coordinates: z.array(
+                    z.tuple([z.number(), z.number()])
+                ).optional()
+            }).optional()
+        })
+    ).optional()
+}).catchall(z.unknown())
+
+const ValhallaResponseSchema = z.object({
+    trip: z.object({
+        legs: z.array(
+            z.object({
+                shape: z.string().optional()
+            })
+        ).optional()
+    }).optional()
+}).catchall(z.unknown())
 
 type PendingRoute = {
     id: string
@@ -92,11 +116,11 @@ async function fetchOsrmSelfHosted(
     const response = await fetch(url, { signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-    const payload = (await response.json()) as {
-        code?: string
-        routes?: Array<{ geometry?: { coordinates?: [number, number][] } }>
-    }
-    const coords = payload.routes?.[0]?.geometry?.coordinates
+    const payloadRaw = await response.json()
+    const parsed = OsrmResponseSchema.safeParse(payloadRaw)
+    if (!parsed.success) return null
+
+    const coords = parsed.data.routes?.[0]?.geometry?.coordinates
     return coords && coords.length > 0 ? coords : null
 }
 
@@ -114,11 +138,11 @@ async function fetchOsrmPublic(
     const response = await fetch(url, { signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-    const payload = (await response.json()) as {
-        code?: string
-        routes?: Array<{ geometry?: { coordinates?: [number, number][] } }>
-    }
-    const coords = payload.routes?.[0]?.geometry?.coordinates
+    const payloadRaw = await response.json()
+    const parsed = OsrmResponseSchema.safeParse(payloadRaw)
+    if (!parsed.success) return null
+
+    const coords = parsed.data.routes?.[0]?.geometry?.coordinates
     return coords && coords.length > 0 ? coords : null
 }
 
@@ -136,11 +160,11 @@ async function fetchOsrmFossgis(
     const response = await fetch(url, { signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-    const payload = (await response.json()) as {
-        code?: string
-        routes?: Array<{ geometry?: { coordinates?: [number, number][] } }>
-    }
-    const coords = payload.routes?.[0]?.geometry?.coordinates
+    const payloadRaw = await response.json()
+    const parsed = OsrmResponseSchema.safeParse(payloadRaw)
+    if (!parsed.success) return null
+
+    const coords = parsed.data.routes?.[0]?.geometry?.coordinates
     return coords && coords.length > 0 ? coords : null
 }
 
@@ -163,11 +187,11 @@ async function fetchValhallaFossgis(
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-    const payload = (await response.json()) as {
-        trip?: { legs?: Array<{ shape?: string }> }
-    }
+    const payloadRaw = await response.json()
+    const parsed = ValhallaResponseSchema.safeParse(payloadRaw)
+    if (!parsed.success) return null
 
-    const legs = payload.trip?.legs
+    const legs = parsed.data.trip?.legs
     if (!legs || !legs.length) return null
 
     const combined: [number, number][] = []

@@ -10,22 +10,22 @@ import {
     normalizeFeatureType,
     parseCoordinates,
 } from './helpers'
-import type {
-    CategoryDef,
-    CsvRow,
-    DrawMode,
-    FeatureType,
-    FeatureFormValues,
-    MapProject,
-    ParsedFeature,
+import {
+    FeatureFormValuesSchema,
+    MapProjectSchema,
+    StoredStateSchema,
+    type CategoryDef,
+    type CsvRow,
+    type DrawMode,
+    type FeatureType,
+    type FeatureFormValues,
+    type MapProject,
+    type ParsedFeature,
+    type StoredState,
 } from './types'
+import { z } from 'zod'
 
 const STORAGE_KEY = 'map-editor-projects-v1'
-
-type StoredState = {
-    activeProjectId: string
-    projects: MapProject[]
-}
 
 function createProject(name: string): MapProject {
     const now = new Date().toISOString()
@@ -41,39 +41,36 @@ function createProject(name: string): MapProject {
 
 function safeParseStoredState(raw: string): StoredState | null {
     try {
-        const parsed = JSON.parse(raw) as StoredState
-        if (!parsed || !Array.isArray(parsed.projects) || typeof parsed.activeProjectId !== 'string') {
+        const parsedData = JSON.parse(raw)
+        const parsed = StoredStateSchema.safeParse(parsedData)
+        if (!parsed.success) {
+            console.warn('[safeParseStoredState] Storage structure invalid:', parsed.error.issues)
             return null
         }
 
-        const projects = parsed.projects
-            .filter((project) => project && typeof project.id === 'string' && typeof project.name === 'string')
-            .map((project) => {
-                const rawFeatures = Array.isArray(project.features) ? project.features : []
-                // Dedupe features by name+coordinates (defensive against past duplicates)
-                const seen = new Set<string>()
-                const features = rawFeatures.filter((feature: ParsedFeature) => {
-                    const key = `${feature?.name ?? ''}::${feature?.coordinates ?? ''}`
-                    if (seen.has(key)) return false
-                    seen.add(key)
-                    return true
-                })
-                return {
-                    ...project,
-                    categories: Array.isArray(project.categories)
-                        ? project.categories.map((category) => ({
-                            ...category,
-                            parentId: category.parentId ?? null,
-                        }))
-                        : [],
-                    features,
-                }
+        const projects = parsed.data.projects.map((project) => {
+            // Dedupe features by name+coordinates (defensive against past duplicates)
+            const seen = new Set<string>()
+            const features = project.features.filter((feature) => {
+                const key = `${feature.name}::${feature.coordinates}`
+                if (seen.has(key)) return false
+                seen.add(key)
+                return true
             })
+            return {
+                ...project,
+                categories: project.categories.map((category) => ({
+                    ...category,
+                    parentId: category.parentId ?? null,
+                })),
+                features,
+            }
+        })
 
         if (!projects.length) return null
 
-        const activeProjectId = projects.some((project) => project.id === parsed.activeProjectId)
-            ? parsed.activeProjectId
+        const activeProjectId = projects.some((project) => project.id === parsed.data.activeProjectId)
+            ? parsed.data.activeProjectId
             : projects[0]?.id ?? ''
 
         return { activeProjectId, projects }

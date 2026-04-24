@@ -1,4 +1,11 @@
+import { z } from 'zod'
+
 export const SESSION_COOKIE = 'map_session'
+
+export const LoginSchema = z.object({
+    username: z.string().min(1, 'Username is required'),
+    password: z.string().min(1, 'Password is required'),
+})
 
 /** Verifica credenciales contra las variables de entorno */
 export function checkCredentials(username: string, password: string): boolean {

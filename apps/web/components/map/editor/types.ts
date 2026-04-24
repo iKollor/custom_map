@@ -1,46 +1,84 @@
+import { z } from 'zod'
+
 export type CsvRow = Record<string, string>
 
-export type FeatureType = 'point' | 'route' | 'section'
+export const FeatureTypeSchema = z.enum(['point', 'route', 'section'])
+export type FeatureType = z.infer<typeof FeatureTypeSchema>
 
-export interface CategoryDef {
-    id: string
-    name: string
-    color: string
-    parentId?: string | null
-    subcategories?: string[]
-}
+export const CategoryDefSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    color: z.string(),
+    parentId: z.string().nullish(),
+    subcategories: z.array(z.string()).optional(),
+})
+export type CategoryDef = z.infer<typeof CategoryDefSchema>
 
 export type DrawMode = FeatureType | null
 
-export interface ParsedFeature {
-    _id: string
-    _coords: [number, number][] | [number, number] | null
-    _raw: CsvRow
-    type: FeatureType
-    name: string
-    category: string
-    subcategory: string
-    coordinates: string
-    description: string
-    customFields?: Record<string, string>
-}
+const BaseFeatureSchema = z.object({
+    _id: z.string(),
+    _raw: z.record(z.string()).catch({}),
+    name: z.string(),
+    category: z.string(),
+    subcategory: z.string(),
+    coordinates: z.string(),
+    description: z.string(),
+    customFields: z.record(z.string()).optional(),
+})
 
-export interface FeatureFormValues {
-    name: string
-    type: FeatureType
-    category: string
-    newCategory: string
-    subcategory: string
-    description: string
-    coordinates: string
-    _editId?: string
-}
+export const PointFeatureSchema = BaseFeatureSchema.extend({
+    type: z.literal('point'),
+    _coords: z.tuple([z.number(), z.number()]).nullable(),
+})
+export type PointFeature = z.infer<typeof PointFeatureSchema>
 
-export interface MapProject {
-    id: string
-    name: string
-    createdAt: string
-    updatedAt: string
-    categories: CategoryDef[]
-    features: ParsedFeature[]
-}
+export const RouteFeatureSchema = BaseFeatureSchema.extend({
+    type: z.literal('route'),
+    _coords: z.array(z.tuple([z.number(), z.number()])).nullable(),
+})
+export type RouteFeature = z.infer<typeof RouteFeatureSchema>
+
+export const SectionFeatureSchema = BaseFeatureSchema.extend({
+    type: z.literal('section'),
+    _coords: z.array(z.tuple([z.number(), z.number()])).nullable(),
+})
+export type SectionFeature = z.infer<typeof SectionFeatureSchema>
+
+export const ParsedFeatureSchema = z.discriminatedUnion('type', [
+    PointFeatureSchema,
+    RouteFeatureSchema,
+    SectionFeatureSchema,
+])
+export type ParsedFeature = z.infer<typeof ParsedFeatureSchema>
+
+export const FeatureFormValuesSchema = z.object({
+    name: z.string().min(1, 'El nombre es obligatorio'),
+    type: FeatureTypeSchema,
+    category: z.string().min(1, 'La categoria es obligatoria'),
+    newCategory: z.string(),
+    subcategory: z.string(),
+    description: z.string(),
+    coordinates: z.string(),
+    _editId: z.string().optional(),
+}).refine(data => data.category !== '__new__' || data.newCategory.trim().length > 0, {
+    message: "El nombre de la nueva categoria es requerido",
+    path: ["newCategory"],
+})
+export type FeatureFormValues = z.infer<typeof FeatureFormValuesSchema>
+
+export const MapProjectSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    categories: z.array(CategoryDefSchema),
+    features: z.array(ParsedFeatureSchema),
+})
+export type MapProject = z.infer<typeof MapProjectSchema>
+
+export const StoredStateSchema = z.object({
+    activeProjectId: z.string(),
+    projects: z.array(MapProjectSchema),
+})
+export type StoredState = z.infer<typeof StoredStateSchema>

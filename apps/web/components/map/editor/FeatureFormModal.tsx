@@ -20,7 +20,7 @@ import {
 } from '@workspace/ui/components/select'
 import { Textarea } from '@workspace/ui/components/textarea'
 import { FEATURE_TYPES, TYPE_ICONS, TYPE_LABELS } from './constants'
-import type { CategoryDef, FeatureFormValues } from './types'
+import { FeatureFormValuesSchema, type CategoryDef, type FeatureFormValues } from './types'
 
 interface FeatureFormModalProps {
     open: boolean
@@ -69,24 +69,21 @@ export function FeatureFormModal({
         setErrors((prev) => ({ ...prev, [key]: undefined }))
     }
 
-    function validate(): boolean {
-        const nextErrors: Partial<Record<keyof FeatureFormValues, string>> = {}
-
-        if (!form.name.trim()) nextErrors.name = 'El nombre es requerido'
-        if (form.category === '__new__' && !form.newCategory.trim()) {
-            nextErrors.newCategory = 'Escribe el nombre'
+    function handleSave() {
+        const parsed = FeatureFormValuesSchema.safeParse(form)
+        if (!parsed.success) {
+            const nextErrors: Partial<Record<keyof FeatureFormValues, string>> = {}
+            for (const issue of parsed.error.issues) {
+                const path = issue.path[0] as keyof FeatureFormValues
+                if (!nextErrors[path]) nextErrors[path] = issue.message
+            }
+            setErrors(nextErrors)
+            return
         }
 
-        setErrors(nextErrors)
-        return Object.keys(nextErrors).length === 0
-    }
-
-    function handleSave() {
-        if (!validate()) return
-
         onSave({
-            ...form,
-            category: form.category === '__new__' ? form.newCategory.trim() : form.category,
+            ...parsed.data,
+            category: parsed.data.category === '__new__' ? parsed.data.newCategory.trim() : parsed.data.category,
         })
     }
 

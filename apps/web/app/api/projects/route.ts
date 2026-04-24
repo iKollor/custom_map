@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { SESSION_COOKIE, isValidSessionValue } from '@/lib/auth'
+import { StoredStateSchema } from '@/components/map/editor/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,20 +51,19 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
     }
 
-    if (!payload || typeof payload !== 'object') {
-        return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
-    }
-
-    const body = payload as { activeProjectId?: unknown; projects?: unknown }
-    if (typeof body.activeProjectId !== 'string' || !Array.isArray(body.projects)) {
-        return NextResponse.json({ error: 'Invalid payload shape' }, { status: 400 })
+    const parseResult = StoredStateSchema.safeParse(payload)
+    if (!parseResult.success) {
+        return NextResponse.json(
+            { error: 'Invalid payload shape', details: parseResult.error.format() },
+            { status: 400 }
+        )
     }
 
     try {
         const saved = await prisma.projectSnapshot.upsert({
             where: { id: SNAPSHOT_ID },
-            update: { data: body as object },
-            create: { id: SNAPSHOT_ID, data: body as object },
+            update: { data: parseResult.data as unknown as object },
+            create: { id: SNAPSHOT_ID, data: parseResult.data as unknown as object },
         })
 
         return NextResponse.json({
