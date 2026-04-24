@@ -115,7 +115,7 @@ export function downloadCSV(features: ParsedFeature[], categories: CategoryDef[]
     const rows = features.map((f) => {
         const row = { ...f._raw }
         const cat = byName.get(f.category)
-        
+
         row.name = f.name
         row.description = f.description ?? ''
         row.type = f.type
@@ -153,7 +153,7 @@ export function downloadCSV(features: ParsedFeature[], categories: CategoryDef[]
 // Deduplicates and merges categories with subcategories
 export function catsFromFeatures(features: ParsedFeature[], existing: CategoryDef[]): CategoryDef[] {
     const existingByName = new Set(existing.map((c) => c.name))
-    const next = existing.map((category) => ({
+    const next: CategoryDef[] = existing.map((category) => ({
         ...category,
         subcategories: Array.from(new Set(category.subcategories ?? [])),
     }))
@@ -189,7 +189,7 @@ export function catsFromFeatures(features: ParsedFeature[], existing: CategoryDe
             const sub = getOrCreate(feature.subcategory, parent.id)
             finalCatName = sub.name
         }
-        
+
         feature.category = finalCatName
     }
 

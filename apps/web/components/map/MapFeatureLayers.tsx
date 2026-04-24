@@ -613,7 +613,7 @@ export function MapFeatureLayers({
                 const sectionPolygon = feature.type === 'section'
                     ? getSectionPolygonCoordinates(feature, resolvedRoutes)
                     : []
-                
+
                 // Fallback to midpoint if centroid fails for any reason
                 const computedCentroid = centroid(sectionPolygon)
                 const anchor = feature.type === 'section' ? (computedCentroid ?? midpoint(coordinates)) : midpoint(coordinates)
@@ -625,9 +625,8 @@ export function MapFeatureLayers({
                         longitude={anchor[0]}
                         latitude={anchor[1]}
                         offset={[0, 6]}
-                        style={{ zIndex: 100 }}
                     >
-                        <MarkerContent className="pointer-events-none">
+                        <MarkerContent className="pointer-events-none z-[100]">
                             <div className="h-1.5 w-1.5 rounded-full bg-white/0" />
                         </MarkerContent>
                         <MarkerLabel className="rounded-full border border-border/60 bg-background/92 px-2 py-0.5 text-[10px] font-semibold shadow-sm backdrop-blur">
