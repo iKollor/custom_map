@@ -7,6 +7,7 @@ dist
 .env.*
 .yarn/cache
 .yarn/install-state.gz
-docker
+docker/*
+!docker/web-entrypoint.sh
 README.md
 DESIGN_AGENT_GUIDE.md
