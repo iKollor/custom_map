@@ -942,13 +942,13 @@ export function MapFeatureLayers({
                                             style={{
                                                 width: isEndpoint ? 14 : 12,
                                                 height: isEndpoint ? 14 : 12,
-                                                backgroundColor: feature.type === 'section' ? THEME_COLORS.section : THEME_COLORS.route,
+                                                backgroundColor: THEME_COLORS.route,
                                             }}
                                         />
                                     </div>
                                 </MarkerContent>
                                 <MarkerLabel className="rounded-full bg-background/85 px-2 py-0.5 text-[10px] backdrop-blur">
-                                    {feature.type === 'section' ? 'Seccion' : 'Ruta'} {index + 1}
+                                    {feature.type === 'route' ? 'Ruta' : 'Punto'} {index + 1}
                                 </MarkerLabel>
                                 <MarkerTooltip>
                                     <FeatureTooltip feature={feature} coordinates={point} categories={categories} />
