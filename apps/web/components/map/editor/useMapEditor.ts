@@ -474,11 +474,11 @@ export function useMapEditor() {
             if (values._editId) {
                 nextFeatures = nextFeatures.map((feature) =>
                     feature._id === values._editId
-                        ? { ...feature, ...raw, type, _coords: coords, _raw: raw }
+                        ? ({ ...feature, ...raw, type, _coords: coords, _raw: raw } as ParsedFeature)
                         : feature,
                 )
             } else {
-                const newFeature: ParsedFeature = {
+                const newFeature = {
                     _id: makeId(),
                     _coords: coords,
                     _raw: raw,
@@ -488,7 +488,7 @@ export function useMapEditor() {
                     subcategory: values.subcategory,
                     description: values.description,
                     coordinates: values.coordinates,
-                }
+                } as ParsedFeature
                 nextFeatures = [...nextFeatures, newFeature]
             }
 
@@ -550,7 +550,7 @@ export function useMapEditor() {
                     const coordinates = coordsToWKT(normalizedCoords, feature.type)
                     const parsedCoords = feature.type === 'point'
                         ? (normalizedCoords[0] ?? null)
-                        : normalizedCoords
+                        : (normalizedCoords as [number, number][])
 
                     return {
                         ...feature,
@@ -561,7 +561,7 @@ export function useMapEditor() {
                             coordinates,
                             type: feature.type,
                         },
-                    }
+                    } as ParsedFeature
                 }),
             }))
         },

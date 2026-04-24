@@ -18,13 +18,13 @@ export type DrawMode = FeatureType | null
 
 const BaseFeatureSchema = z.object({
     _id: z.string(),
-    _raw: z.record(z.string()).catch({}),
+    _raw: z.record(z.string(), z.unknown()).catch({}),
     name: z.string(),
     category: z.string(),
     subcategory: z.string(),
     coordinates: z.string(),
     description: z.string(),
-    customFields: z.record(z.string()).optional(),
+    customFields: z.record(z.string(), z.string()).optional(),
 })
 
 export const PointFeatureSchema = BaseFeatureSchema.extend({
