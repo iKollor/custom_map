@@ -121,8 +121,12 @@ export default function MapClient({ username }: { username: string }) {
                 features={editor.features}
                 activeTypes={editor.activeTypes}
                 activeCategories={editor.activeCategories}
+                forcedTooltipTypes={editor.forcedTooltipTypes}
+                forcedTooltipCategories={editor.forcedTooltipCategories}
                 onToggleType={editor.toggleType}
                 onToggleCategory={editor.toggleCategory}
+                onToggleForcedTooltipType={editor.toggleForcedTooltipType}
+                onToggleForcedTooltipCategory={editor.toggleForcedTooltipCategory}
                 categories={editor.categories}
             />
 
@@ -198,6 +202,8 @@ export default function MapClient({ username }: { username: string }) {
                     resolvedRoutes={derived.resolvedRoutes}
                     activeInfoPanelFeatureId={selection.activeInfoPanelFeatureId}
                     activeSelectedRouteId={selection.activeSelectedRouteId}
+                    forcedTooltipTypes={editor.forcedTooltipTypes}
+                    forcedTooltipCategories={editor.forcedTooltipCategories}
                     onOpenFeatureInfoAction={selection.openFeatureInfo}
                     onSelectRouteAction={selection.setSelectedRouteId}
                     onOpenContextMenuAction={selection.openContextMenu}

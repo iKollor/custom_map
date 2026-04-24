@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Feature as GeoJsonFeature, Point as GeoJsonPoint } from 'geojson'
 
 import {
@@ -36,7 +36,7 @@ function FeatureTooltip({ feature, coordinates, categories }: FeatureTooltipProp
         : `${coordinates[1].toFixed(5)}, ${coordinates[0].toFixed(5)}`
 
     return (
-        <div className="min-w-40 max-w-60 space-y-1.5 text-left">
+        <div className="min-w-44 max-w-64 space-y-2 text-left">
             <div className="flex items-center gap-2">
                 <span
                     aria-hidden
@@ -50,9 +50,12 @@ function FeatureTooltip({ feature, coordinates, categories }: FeatureTooltipProp
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 {feature.subcategory || feature.category || 'Sin categoría'}
             </p>
-            <p className="text-[11px] leading-snug text-muted-foreground/90">
-                {locationText}
-            </p>
+            <div className="grid grid-cols-1 gap-2 rounded-md border border-border/60 bg-background/60 p-2">
+                <div>
+                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Ubicación</p>
+                    <p className="text-xs font-semibold text-foreground">{locationText}</p>
+                </div>
+            </div>
         </div>
     )
 }
@@ -67,6 +70,8 @@ type MapFeatureLayersProps = {
     resolvedRoutes: ResolvedRouteState
     activeInfoPanelFeatureId: string | null
     activeSelectedRouteId: string | null
+    forcedTooltipTypes: Set<string>
+    forcedTooltipCategories: Set<string>
     onOpenFeatureInfoAction: (featureId: string | null) => void
     onSelectRouteAction: (routeId: string | null) => void
     onOpenContextMenuAction: (state: { featureId: string; coordinates: [number, number]; screenPosition: { x: number; y: number } }) => void
@@ -427,6 +432,8 @@ export function MapFeatureLayers({
     resolvedRoutes,
     activeInfoPanelFeatureId,
     activeSelectedRouteId,
+    forcedTooltipTypes,
+    forcedTooltipCategories,
     onOpenFeatureInfoAction,
     onSelectRouteAction,
     onOpenContextMenuAction,
@@ -445,38 +452,38 @@ export function MapFeatureLayers({
     const duplicateCancelledRef = useRef(false)
     const gestureCleanupRef = useRef<(() => void) | null>(null)
 
-    const clearLongPressTimer = () => {
+    const clearLongPressTimer = useCallback(() => {
         if (longPressTimerRef.current === null) return
         window.clearTimeout(longPressTimerRef.current)
         longPressTimerRef.current = null
-    }
+    }, [])
 
-    const detachGestureListeners = () => {
+    const detachGestureListeners = useCallback(() => {
         gestureCleanupRef.current?.()
         gestureCleanupRef.current = null
-    }
+    }, [])
 
-    const endGestureTracking = () => {
+    const endGestureTracking = useCallback(() => {
         detachGestureListeners()
         pointerOriginRef.current = null
         pointerCurrentRef.current = null
         duplicateGesturePointerTypeRef.current = null
-    }
+    }, [detachGestureListeners])
 
-    const cancelDuplicateGesture = () => {
+    const cancelDuplicateGesture = useCallback(() => {
         duplicateCancelledRef.current = true
         setDragDuplicatePointId(null)
         setArmedDuplicatePointId(null)
         longPressCandidateRef.current = null
         clearLongPressTimer()
-    }
+    }, [clearLongPressTimer])
 
     useEffect(() => {
         return () => {
             clearLongPressTimer()
             endGestureTracking()
         }
-    }, [])
+    }, [clearLongPressTimer, endGestureTracking])
 
     const beginGestureTracking = (event: PointerEvent) => {
         endGestureTracking()
@@ -626,7 +633,7 @@ export function MapFeatureLayers({
                         latitude={anchor[1]}
                         offset={[0, 6]}
                     >
-                        <MarkerContent className="pointer-events-none z-[100]">
+                        <MarkerContent className="pointer-events-none z-100">
                             <div className="h-1.5 w-1.5 rounded-full bg-white/0" />
                         </MarkerContent>
                         <MarkerLabel className="rounded-full border border-border/60 bg-background/92 px-2 py-0.5 text-[10px] font-semibold shadow-sm backdrop-blur">
@@ -942,6 +949,36 @@ export function MapFeatureLayers({
                         )
                     })
                 })}
+
+            {/* Forced Tooltips */}
+            {[...pointFeatures, ...linearFeatures].filter((f) => forcedTooltipTypes.has(f.type) || forcedTooltipCategories.has(f.category)).map((feature) => {
+                const coordinates = feature.type === 'point' ? (feature._coords as [number, number]) : centroid(feature.type === 'section' ? getSectionPolygonCoordinates(feature, resolvedRoutes) : getRenderableCoordinates(feature, resolvedRoutes)) ?? (feature._coords[0] as [number, number] | undefined) ?? [0, 0]
+                if (!coordinates) return null
+                return (
+                    <MapPopup
+                        key={`${feature._id}-force-tooltip`}
+                        longitude={coordinates[0]}
+                        latitude={coordinates[1]}
+                        closeButton={false}
+                        closeOnClick={false}
+                        closeOnMove={false}
+                        wrapperClassName="pointer-events-none z-50"
+                        className="pointer-events-none border-border/70 bg-background/95 p-2.5 shadow-lg"
+                    >
+                        {feature.type === 'point' ? (
+                            <FeatureTooltip feature={feature} coordinates={coordinates as [number, number]} categories={categories} />
+                        ) : (
+                            <LineFeatureTooltip
+                                feature={feature}
+                                categories={categories}
+                                coordinates={getRenderableCoordinates(feature, resolvedRoutes)}
+                                sectionPolygon={feature.type === 'section' ? getSectionPolygonCoordinates(feature, resolvedRoutes) : []}
+                                pointFeatures={pointFeatures}
+                            />
+                        )}
+                    </MapPopup>
+                )
+            })}
         </>
     )
 }

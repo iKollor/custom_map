@@ -1,6 +1,6 @@
 'use client'
 
-import { MapPin, X } from 'lucide-react'
+import { MapPin, X, MessageSquareText } from 'lucide-react'
 import { motion } from 'motion/react'
 import { Button } from '@workspace/ui/components/button'
 import {
@@ -20,8 +20,12 @@ interface FilterPanelProps {
     features: ParsedFeature[]
     activeTypes: Set<FeatureType>
     activeCategories: Set<string>
+    forcedTooltipTypes: Set<string>
+    forcedTooltipCategories: Set<string>
     onToggleType: (type: FeatureType) => void
     onToggleCategory: (category: string) => void
+    onToggleForcedTooltipType: (type: FeatureType) => void
+    onToggleForcedTooltipCategory: (category: string) => void
     categories: CategoryDef[]
 }
 
@@ -74,8 +78,12 @@ function FilterBody({
     features,
     activeTypes,
     activeCategories,
+    forcedTooltipTypes,
+    forcedTooltipCategories,
     onToggleType,
     onToggleCategory,
+    onToggleForcedTooltipType,
+    onToggleForcedTooltipCategory,
     categories,
 }: FilterPanelProps) {
     const allTypes = FEATURE_TYPES.filter((type) => features.some((feature) => feature.type === type))
@@ -88,6 +96,7 @@ function FilterBody({
                     {allTypes.map((type, index) => {
                         const count = features.filter((f) => f.type === type).length
                         const active = activeTypes.has(type)
+                        const tooltipsActive = forcedTooltipTypes.has(type)
 
                         return (
                             <motion.div
@@ -114,7 +123,18 @@ function FilterBody({
                                 </span>
                                 <span className="flex items-center gap-1.5">
                                     <span className="text-xs text-muted-foreground">{count}</span>
-                                    <Checkbox checked={active} className="pointer-events-none" aria-hidden="true" />
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onToggleForcedTooltipType(type)
+                                        }}
+                                        className={`rounded-md p-1 transition-colors hover:bg-sky-100 ${tooltipsActive ? 'text-sky-600' : 'text-muted-foreground/40'}`}
+                                        title="Mostrar tooltip permanentemente"
+                                    >
+                                        <MessageSquareText className="h-4 w-4" />
+                                    </button>
+                                    <Checkbox checked={active} className="pointer-events-none ml-1" aria-hidden="true" />
                                 </span>
                             </motion.div>
                         )
@@ -128,6 +148,7 @@ function FilterBody({
                     {categories.map((cat, index) => {
                         const count = features.filter((f) => f.category === cat.name).length
                         const active = activeCategories.has(cat.name)
+                        const tooltipsActive = forcedTooltipCategories.has(cat.name)
 
                         return (
                             <motion.div
@@ -155,7 +176,18 @@ function FilterBody({
                                 </span>
                                 <span className="flex items-center gap-1.5">
                                     <span className="text-xs text-muted-foreground">{count}</span>
-                                    <Checkbox checked={active} className="pointer-events-none" aria-hidden="true" />
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onToggleForcedTooltipCategory(cat.name)
+                                        }}
+                                        className={`rounded-md p-1 transition-colors hover:bg-sky-100 ${tooltipsActive ? 'text-sky-600' : 'text-muted-foreground/40'}`}
+                                        title="Mostrar tooltip permanentemente"
+                                    >
+                                        <MessageSquareText className="h-4 w-4" />
+                                    </button>
+                                    <Checkbox checked={active} className="pointer-events-none ml-1" aria-hidden="true" />
                                 </span>
                             </motion.div>
                         )

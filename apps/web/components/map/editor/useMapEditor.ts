@@ -131,6 +131,8 @@ export function useMapEditor() {
 
     const [activeTypes, setActiveTypes] = useState<Set<FeatureType>>(new Set())
     const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set())
+    const [forcedTooltipTypes, setForcedTooltipTypes] = useState<Set<string>>(new Set())
+    const [forcedTooltipCategories, setForcedTooltipCategories] = useState<Set<string>>(new Set())
 
     const [filtersOpen, setFiltersOpen] = useState(false)
     const [importOpen, setImportOpen] = useState(false)
@@ -850,6 +852,22 @@ export function useMapEditor() {
         })
     }, [])
 
+    const toggleForcedTooltipType = useCallback((type: string) => {
+        setForcedTooltipTypes((prev) => {
+            const next = new Set(prev)
+            next.has(type) ? next.delete(type) : next.add(type)
+            return next
+        })
+    }, [])
+
+    const toggleForcedTooltipCategory = useCallback((category: string) => {
+        setForcedTooltipCategories((prev) => {
+            const next = new Set(prev)
+            next.has(category) ? next.delete(category) : next.add(category)
+            return next
+        })
+    }, [])
+
     const handleToggleEdit = useCallback(() => {
         setEditMode((active) => {
             if (active) {
@@ -921,6 +939,10 @@ export function useMapEditor() {
         handleExport,
         toggleType,
         toggleCategory,
+        forcedTooltipTypes,
+        forcedTooltipCategories,
+        toggleForcedTooltipType,
+        toggleForcedTooltipCategory,
         handleToggleEdit,
     }
 }

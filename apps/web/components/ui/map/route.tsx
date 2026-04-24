@@ -1,7 +1,7 @@
 "use client";
 
 import type MapLibreGL from "maplibre-gl";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useEffectEvent, useId, useRef } from "react";
 
 import { MAP_COLORS } from "./constants";
 import { useMap } from "./core";
@@ -194,55 +194,51 @@ function MapPolygon({
         outlineOpacity,
     ]);
 
+    const handleClickEvent = useEffectEvent(() => onClick?.());
+    const handleContextMenuEvent = useEffectEvent((coords: [number, number], pos: { x: number; y: number }) => onContextMenu?.(coords, pos));
+    const handleMouseEnterEvent = useEffectEvent(() => onMouseEnter?.());
+    const handleMouseMoveEvent = useEffectEvent((coords: [number, number]) => onMouseMove?.(coords));
+    const handleMouseLeaveEvent = useEffectEvent(() => onMouseLeave?.());
+
     useEffect(() => {
         if (!isLoaded || !map || !interactive) return;
 
         const handleClick = () => {
-            onClick?.();
+            handleClickEvent();
         };
-        const handleContextMenuEvent = (e: MapLibreGL.MapMouseEvent) => {
+        const handleContextMenu = (e: MapLibreGL.MapMouseEvent) => {
             e.originalEvent.preventDefault();
-            onContextMenu?.([e.lngLat.lng, e.lngLat.lat], {
+            handleContextMenuEvent([e.lngLat.lng, e.lngLat.lat], {
                 x: e.originalEvent.clientX,
                 y: e.originalEvent.clientY,
             });
         };
         const handleMouseEnter = () => {
             map.getCanvas().style.cursor = "pointer";
-            onMouseEnter?.();
+            handleMouseEnterEvent();
         };
         const handleMouseMove = (e: MapLibreGL.MapMouseEvent) => {
-            onMouseMove?.([e.lngLat.lng, e.lngLat.lat]);
+            handleMouseMoveEvent([e.lngLat.lng, e.lngLat.lat]);
         };
         const handleMouseLeave = () => {
             map.getCanvas().style.cursor = "";
-            onMouseLeave?.();
+            handleMouseLeaveEvent();
         };
 
         map.on("click", fillLayerId, handleClick);
-        map.on("contextmenu", fillLayerId, handleContextMenuEvent);
+        map.on("contextmenu", fillLayerId, handleContextMenu);
         map.on("mouseenter", fillLayerId, handleMouseEnter);
         map.on("mousemove", fillLayerId, handleMouseMove);
         map.on("mouseleave", fillLayerId, handleMouseLeave);
 
         return () => {
             map.off("click", fillLayerId, handleClick);
-            map.off("contextmenu", fillLayerId, handleContextMenuEvent);
+            map.off("contextmenu", fillLayerId, handleContextMenu);
             map.off("mouseenter", fillLayerId, handleMouseEnter);
             map.off("mousemove", fillLayerId, handleMouseMove);
             map.off("mouseleave", fillLayerId, handleMouseLeave);
         };
-    }, [
-        isLoaded,
-        map,
-        fillLayerId,
-        onClick,
-        onContextMenu,
-        onMouseEnter,
-        onMouseMove,
-        onMouseLeave,
-        interactive,
-    ]);
+    }, [isLoaded, map, fillLayerId, interactive]);
 
     return null;
 }
@@ -347,55 +343,51 @@ function MapRoute({
         }
     }, [isLoaded, map, layerId, color, width, opacity, dashArray]);
 
+    const handleClickEvent = useEffectEvent(() => onClick?.());
+    const handleContextMenuEvent = useEffectEvent((coords: [number, number], pos: { x: number; y: number }) => onContextMenu?.(coords, pos));
+    const handleMouseEnterEvent = useEffectEvent(() => onMouseEnter?.());
+    const handleMouseMoveEvent = useEffectEvent((coords: [number, number]) => onMouseMove?.(coords));
+    const handleMouseLeaveEvent = useEffectEvent(() => onMouseLeave?.());
+
     useEffect(() => {
         if (!isLoaded || !map || !interactive) return;
 
         const handleClick = () => {
-            onClick?.();
+            handleClickEvent();
         };
-        const handleContextMenuEvent = (e: MapLibreGL.MapMouseEvent) => {
+        const handleContextMenu = (e: MapLibreGL.MapMouseEvent) => {
             e.originalEvent.preventDefault();
-            onContextMenu?.([e.lngLat.lng, e.lngLat.lat], {
+            handleContextMenuEvent([e.lngLat.lng, e.lngLat.lat], {
                 x: e.originalEvent.clientX,
                 y: e.originalEvent.clientY,
             });
         };
         const handleMouseEnter = () => {
             map.getCanvas().style.cursor = "pointer";
-            onMouseEnter?.();
+            handleMouseEnterEvent();
         };
         const handleMouseMove = (e: MapLibreGL.MapMouseEvent) => {
-            onMouseMove?.([e.lngLat.lng, e.lngLat.lat]);
+            handleMouseMoveEvent([e.lngLat.lng, e.lngLat.lat]);
         };
         const handleMouseLeave = () => {
             map.getCanvas().style.cursor = "";
-            onMouseLeave?.();
+            handleMouseLeaveEvent();
         };
 
         map.on("click", layerId, handleClick);
-        map.on("contextmenu", layerId, handleContextMenuEvent);
+        map.on("contextmenu", layerId, handleContextMenu);
         map.on("mouseenter", layerId, handleMouseEnter);
         map.on("mousemove", layerId, handleMouseMove);
         map.on("mouseleave", layerId, handleMouseLeave);
 
         return () => {
             map.off("click", layerId, handleClick);
-            map.off("contextmenu", layerId, handleContextMenuEvent);
+            map.off("contextmenu", layerId, handleContextMenu);
             map.off("mouseenter", layerId, handleMouseEnter);
             map.off("mousemove", layerId, handleMouseMove);
             map.off("mouseleave", layerId, handleMouseLeave);
         };
-    }, [
-        isLoaded,
-        map,
-        layerId,
-        onClick,
-        onContextMenu,
-        onMouseEnter,
-        onMouseMove,
-        onMouseLeave,
-        interactive,
-    ]);
+    }, [isLoaded, map, layerId, interactive]);
 
     return null;
 }
