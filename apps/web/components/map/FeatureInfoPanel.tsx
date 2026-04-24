@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { X, Edit2, Trash2, Plus, MapPin, Route, Square, Copy, ExternalLink } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Button } from '@workspace/ui/components/button'
@@ -343,38 +343,70 @@ export function FeatureInfoPanel({
 }: FeatureInfoPanelProps) {
     const feature = featureId ? (features.find((f) => f._id === featureId) ?? null) : null
     const isMobile = useIsMobile()
+    const openedAtRef = useRef(0)
+
+    useEffect(() => {
+        if (!feature) return
+        openedAtRef.current = Date.now()
+    }, [feature?._id, feature])
+
+    const handleBackdropClose = useCallback((event?: React.PointerEvent | React.MouseEvent) => {
+        // Ignore the opening tap/click so the panel does not flicker-close
+        // on the same interaction that selected the marker. Tap-outside still
+        // works because real "outside" taps happen well after open.
+        if (Date.now() - openedAtRef.current < 300) return
+        event?.preventDefault()
+        event?.stopPropagation()
+        onCloseAction()
+    }, [onCloseAction])
 
     return (
         <AnimatePresence>
             {feature && (
-                <motion.div
-                    key={feature._id}
-                    initial={isMobile ? { y: '100%', opacity: 0 } : { x: -16, opacity: 0 }}
-                    animate={isMobile ? { y: 0, opacity: 1 } : { x: 0, opacity: 1 }}
-                    exit={isMobile ? { y: '100%', opacity: 0 } : { x: -16, opacity: 0 }}
-                    transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                    className={cn(
-                        'z-30 flex flex-col overflow-hidden bg-background/98 shadow-[0_-18px_55px_-24px_rgba(0,0,0,0.45)] ring-1 ring-black/5 backdrop-blur-md',
-                        isMobile
-                            ? 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t border-x border-border/80'
-                            : 'absolute top-14 left-3 max-h-[calc(100vh-8rem)] w-72 rounded-2xl border border-border/80',
-                    )}
-                    style={isMobile ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)' } : undefined}
-                >
+                <>
                     {isMobile && (
-                        <div
-                            className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/30"
-                            aria-hidden="true"
+                        <motion.div
+                            role="button"
+                            tabIndex={0}
+                            aria-label="Cerrar información"
+                            className="fixed inset-0 z-20 bg-black/30"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.18 }}
+                            onPointerDown={handleBackdropClose}
                         />
                     )}
-                    <PanelContent
-                        feature={feature}
-                        onCloseAction={onCloseAction}
-                        onEditAction={onEditAction}
-                        onDeleteAction={onDeleteAction}
-                        onUpdateCustomFieldsAction={onUpdateCustomFieldsAction}
-                    />
-                </motion.div>
+
+                    <motion.div
+                        key={feature._id}
+                        initial={isMobile ? { y: '100%', opacity: 0 } : { x: -16, opacity: 0 }}
+                        animate={isMobile ? { y: 0, opacity: 1 } : { x: 0, opacity: 1 }}
+                        exit={isMobile ? { y: '100%', opacity: 0 } : { x: -16, opacity: 0 }}
+                        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                        className={cn(
+                            'z-30 flex flex-col overflow-hidden bg-background/98 shadow-[0_-18px_55px_-24px_rgba(0,0,0,0.45)] ring-1 ring-black/5 backdrop-blur-md',
+                            isMobile
+                                ? 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t border-x border-border/80'
+                                : 'absolute top-14 left-3 max-h-[calc(100vh-8rem)] w-72 rounded-2xl border border-border/80',
+                        )}
+                        style={isMobile ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)' } : undefined}
+                    >
+                        {isMobile && (
+                            <div
+                                className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/30"
+                                aria-hidden="true"
+                            />
+                        )}
+                        <PanelContent
+                            feature={feature}
+                            onCloseAction={onCloseAction}
+                            onEditAction={onEditAction}
+                            onDeleteAction={onDeleteAction}
+                            onUpdateCustomFieldsAction={onUpdateCustomFieldsAction}
+                        />
+                    </motion.div>
+                </>
             )}
         </AnimatePresence>
     )

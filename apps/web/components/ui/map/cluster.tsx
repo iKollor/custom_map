@@ -162,8 +162,24 @@ function getFeatureId(f: {
 /** Desmonta completamente una entrada de marker (listener + root + marker). */
 function removeMarkerEntry(entry: ClusterMarkerEntry) {
     entry.element.removeEventListener("click", entry.onClick);
-    entry.root.unmount();
     entry.marker.remove();
+
+    // Evita desmontar el root de forma síncrona mientras React sigue en render.
+    // Esto previene la advertencia de "Attempted to synchronously unmount a root...".
+    const scheduleUnmount =
+        typeof queueMicrotask === "function"
+            ? queueMicrotask
+            : (cb: () => void) => {
+                  setTimeout(cb, 0);
+              };
+
+    scheduleUnmount(() => {
+        try {
+            entry.root.unmount();
+        } catch {
+            // ignore unmount races on disposed markers
+        }
+    });
 }
 
 function ensureClusterMarkerStyles() {
@@ -253,8 +269,22 @@ function ClusterPieMarkerChart({
                     <ChartTooltip
                         cursor={false}
                         allowEscapeViewBox={{ x: true, y: true }}
-                        wrapperStyle={{ zIndex: 50, pointerEvents: "none" }}
-                        content={<ChartTooltipContent nameKey="value" hideLabel />}
+                        isAnimationActive={false}
+                        wrapperStyle={{
+                            zIndex: 50,
+                            pointerEvents: "none",
+                            transform: "translate(-50%, 0)",
+                            left: "50%",
+                            top: size + 16,
+                            transition: "none",
+                        }}
+                        content={
+                            <ChartTooltipContent
+                                nameKey="value"
+                                hideLabel
+                                className="min-w-48 px-3 py-2 text-[12px] shadow-lg"
+                            />
+                        }
                     />
                     <Pie
                         data={data}
@@ -264,6 +294,7 @@ function ClusterPieMarkerChart({
                         strokeWidth={1.5}
                         stroke="#ffffff"
                         fillOpacity={0.85}
+                        isAnimationActive={false}
                     >
                         {data.map((entry, index) => (
                             <Cell key={`${entry.category}-${index}`} fill={entry.fill} />
@@ -274,6 +305,7 @@ function ClusterPieMarkerChart({
                             stroke="none"
                             fontSize={labelFontSize}
                             fontWeight={600}
+                            style={{ pointerEvents: "none" }}
                             formatter={(value) =>
                                 showPercent ? `${value}%` : `${value}`
                             }
@@ -508,10 +540,10 @@ function MapClusterLayer<
                 filter: ["has", "point_count"],
                 paint: {
                     "circle-color": stepExpression(clusterThresholds, clusterColors),
-                    "circle-radius": stepExpression(clusterThresholds, [20, 30, 40]),
-                    "circle-stroke-width": 1,
+                    "circle-radius": stepExpression(clusterThresholds, [40, 50, 64]),
+                    "circle-stroke-width": 1.2,
                     "circle-stroke-color": MAP_COLORS.white,
-                    "circle-opacity": 0.85,
+                    "circle-opacity": 0.88,
                 },
             });
 
@@ -523,7 +555,7 @@ function MapClusterLayer<
                 layout: {
                     "text-field": "{point_count_abbreviated}",
                     "text-font": ["Open Sans"],
-                    "text-size": 12,
+                    "text-size": 14,
                 },
                 paint: { "text-color": MAP_COLORS.white },
             });
@@ -536,7 +568,7 @@ function MapClusterLayer<
                 source: sourceId,
                 filter: ["has", "point_count"],
                 paint: {
-                    "circle-radius": stepExpression(clusterThresholds, [18, 24, 30]),
+                    "circle-radius": stepExpression(clusterThresholds, [36, 44, 56]),
                     "circle-opacity": 0,
                     "circle-color": "#000",
                 },
@@ -553,7 +585,7 @@ function MapClusterLayer<
                     pieEnabled && pieOptions
                         ? ["coalesce", ["get", pieOptions.colorProperty], pointColor]
                         : pointColor,
-                "circle-radius": 5,
+                "circle-radius": 8,
                 "circle-stroke-width": 2,
                 "circle-stroke-color": MAP_COLORS.white,
             },
@@ -1128,6 +1160,7 @@ function MapClusterLayer<
         };
 
         const clearHoveredPoint = () => setHoveredPoint(null);
+        const clearHoveredPointOnMapInteraction = () => setHoveredPoint(null);
 
         const setCursor = (value: string) => {
             map.getCanvas().style.cursor = value;
@@ -1170,7 +1203,16 @@ function MapClusterLayer<
             bind("mousemove", unclusteredLayerId, updateHoveredPoint);
         }
 
+        map.on("click", clearHoveredPointOnMapInteraction);
+        map.on("touchstart", clearHoveredPointOnMapInteraction);
+        map.on("movestart", clearHoveredPointOnMapInteraction);
+        map.on("zoomstart", clearHoveredPointOnMapInteraction);
+
         return () => {
+            map.off("click", clearHoveredPointOnMapInteraction);
+            map.off("touchstart", clearHoveredPointOnMapInteraction);
+            map.off("movestart", clearHoveredPointOnMapInteraction);
+            map.off("zoomstart", clearHoveredPointOnMapInteraction);
             for (let i = bindings.length - 1; i >= 0; i -= 1) bindings[i]!();
         };
     }, [

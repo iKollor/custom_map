@@ -12,6 +12,7 @@ import {
     MarkerLabel,
     MarkerTooltip,
 } from '@/components/ui/map'
+import { useIsMobile } from '@/hooks/use-is-mobile'
 import { useReverseGeocode } from '@/hooks/useReverseGeocode'
 
 import { THEME_COLORS, categoryColor, type CategoryDef, type ParsedFeature } from './editor'
@@ -59,6 +60,7 @@ type MapFeatureLayersProps = {
     categories: CategoryDef[]
     clusterData: ClusterData
     editMode: boolean
+    clusteringEnabled: boolean
     pointFeatures: ParsedFeature[]
     linearFeatures: ParsedFeature[]
     resolvedRoutes: ResolvedRouteState
@@ -72,6 +74,9 @@ type MapFeatureLayersProps = {
 }
 
 const LONG_PRESS_DUPLICATE_MS = 420
+const DUPLICATE_MIN_PIXEL_DISTANCE_DESKTOP = 18
+const DUPLICATE_MIN_PIXEL_DISTANCE_TOUCH = 3
+const DUPLICATE_COORD_EPSILON = 0.000001
 
 // Route and section rendering
 function RouteFeature({
@@ -105,6 +110,18 @@ function RouteFeature({
                     fillOpacity={isSelected ? 0.26 : 0.16}
                     outlineColor={color}
                     outlineOpacity={isSelected ? 0.95 : 0.75}
+                    onClick={() => {
+                        onSelectRouteAction(feature._id)
+                        onOpenFeatureInfoAction(feature._id)
+                    }}
+                    onContextMenu={(coords, screenPosition) => {
+                        onSelectRouteAction(feature._id)
+                        onOpenContextMenuAction({
+                            featureId: feature._id,
+                            coordinates: coords,
+                            screenPosition,
+                        })
+                    }}
                 />
             )}
 
@@ -136,6 +153,7 @@ export function MapFeatureLayers({
     categories,
     clusterData,
     editMode,
+    clusteringEnabled,
     pointFeatures,
     linearFeatures,
     resolvedRoutes,
@@ -147,11 +165,17 @@ export function MapFeatureLayers({
     onUpdateFeatureCoordinatesAction,
     onDuplicatePointFeatureAction,
 }: MapFeatureLayersProps) {
+    const isMobile = useIsMobile()
     const [armedDuplicatePointId, setArmedDuplicatePointId] = useState<string | null>(null)
     const [dragDuplicatePointId, setDragDuplicatePointId] = useState<string | null>(null)
     const longPressTimerRef = useRef<number | null>(null)
     const longPressCandidateRef = useRef<string | null>(null)
     const touchActiveRef = useRef<string | null>(null)
+    const pointerOriginRef = useRef<{ x: number; y: number } | null>(null)
+    const pointerCurrentRef = useRef<{ x: number; y: number } | null>(null)
+    const duplicateGesturePointerTypeRef = useRef<'mouse' | 'touch' | 'pen' | null>(null)
+    const duplicateCancelledRef = useRef(false)
+    const gestureCleanupRef = useRef<(() => void) | null>(null)
 
     const clearLongPressTimer = () => {
         if (longPressTimerRef.current === null) return
@@ -159,11 +183,71 @@ export function MapFeatureLayers({
         longPressTimerRef.current = null
     }
 
+    const detachGestureListeners = () => {
+        gestureCleanupRef.current?.()
+        gestureCleanupRef.current = null
+    }
+
+    const endGestureTracking = () => {
+        detachGestureListeners()
+        pointerOriginRef.current = null
+        pointerCurrentRef.current = null
+        duplicateGesturePointerTypeRef.current = null
+    }
+
+    const cancelDuplicateGesture = () => {
+        duplicateCancelledRef.current = true
+        setDragDuplicatePointId(null)
+        setArmedDuplicatePointId(null)
+        longPressCandidateRef.current = null
+        clearLongPressTimer()
+    }
+
     useEffect(() => {
-        return () => clearLongPressTimer()
+        return () => {
+            clearLongPressTimer()
+            endGestureTracking()
+        }
     }, [])
 
+    const beginGestureTracking = (event: PointerEvent) => {
+        endGestureTracking()
+        duplicateCancelledRef.current = false
+        pointerOriginRef.current = { x: event.clientX, y: event.clientY }
+        pointerCurrentRef.current = { x: event.clientX, y: event.clientY }
+
+        const handlePointerMove = (e: PointerEvent) => {
+            pointerCurrentRef.current = { x: e.clientX, y: e.clientY }
+        }
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                cancelDuplicateGesture()
+            }
+        }
+        const handleEnd = () => {
+            // If pointerup/cancel happens outside the marker, detach listeners to avoid leaks.
+            // Keep gesture metrics until dragEnd runs, otherwise duplication can be cancelled
+            // because distance snapshots become null before the duplication check.
+            detachGestureListeners()
+        }
+
+        window.addEventListener('pointermove', handlePointerMove, { passive: true })
+        window.addEventListener('keydown', handleKeyDown)
+        window.addEventListener('pointerup', handleEnd, { once: true })
+        window.addEventListener('pointercancel', handleEnd, { once: true })
+
+        gestureCleanupRef.current = () => {
+            window.removeEventListener('pointermove', handlePointerMove)
+            window.removeEventListener('keydown', handleKeyDown)
+            window.removeEventListener('pointerup', handleEnd)
+            window.removeEventListener('pointercancel', handleEnd)
+        }
+    }
+
     const handlePointPointerDown = (featureId: string, event: PointerEvent) => {
+        beginGestureTracking(event)
+        duplicateGesturePointerTypeRef.current = event.pointerType as 'mouse' | 'touch' | 'pen'
+
         if (event.pointerType === 'mouse') {
             touchActiveRef.current = null
             setArmedDuplicatePointId(event.altKey ? featureId : null)
@@ -303,7 +387,7 @@ export function MapFeatureLayers({
             )}
 
             {/* Point markers */}
-            {editMode ? (
+            {editMode || !clusteringEnabled ? (
                 pointFeatures.map((feature) => {
                     const [lng, lat] = feature._coords as [number, number]
                     const color = categoryColor(feature.category, categories)
@@ -315,17 +399,21 @@ export function MapFeatureLayers({
                             key={feature._id}
                             longitude={lng}
                             latitude={lat}
-                            draggable
+                            draggable={editMode}
                             onPointerDown={(event) => {
+                                if (!editMode) return
                                 handlePointPointerDown(feature._id, event)
                             }}
                             onPointerUp={() => {
+                                if (!editMode) return
                                 handlePointPointerRelease(feature._id)
                             }}
                             onPointerCancel={() => {
+                                if (!editMode) return
                                 handlePointPointerRelease(feature._id)
                             }}
                             onDragStart={() => {
+                                if (!editMode) return
                                 if (armedDuplicatePointId === feature._id) {
                                     setDragDuplicatePointId(feature._id)
                                 }
@@ -348,15 +436,46 @@ export function MapFeatureLayers({
                                 })
                             }}
                             onDragEnd={({ lng: nextLng, lat: nextLat }) => {
+                                if (!editMode) return
                                 const nextPoint = [nextLng, nextLat] as [number, number]
+                                const cancelled = duplicateCancelledRef.current
+
+                                // DOM-level distance between original pointerdown and the
+                                // last tracked pointer position. If the user barely moved,
+                                // treat it as a mis-trigger and cancel duplication.
+                                const origin = pointerOriginRef.current
+                                const current = pointerCurrentRef.current
+                                const pointerType = duplicateGesturePointerTypeRef.current
+                                const isTouchLike = pointerType === 'touch' || pointerType === 'pen'
+                                const minPixelDistance = isTouchLike
+                                    ? DUPLICATE_MIN_PIXEL_DISTANCE_TOUCH
+                                    : DUPLICATE_MIN_PIXEL_DISTANCE_DESKTOP
+                                const hasPixelTracking = Boolean(origin && current)
+                                const pixelDistance = origin && current
+                                    ? Math.hypot(current.x - origin.x, current.y - origin.y)
+                                    : 0
+                                const movedInCoords =
+                                    Math.hypot(nextLng - lng, nextLat - lat) > DUPLICATE_COORD_EPSILON
+                                const tooClose = hasPixelTracking
+                                    ? pixelDistance < minPixelDistance
+                                    : isTouchLike
+                                        ? !movedInCoords
+                                        : true
 
                                 if (dragDuplicatePointId === feature._id) {
-                                    const duplicatedId = onDuplicatePointFeatureAction(feature._id, nextPoint)
                                     setDragDuplicatePointId(null)
                                     setArmedDuplicatePointId(null)
                                     longPressCandidateRef.current = null
                                     clearLongPressTimer()
+                                    endGestureTracking()
 
+                                    if (cancelled || tooClose) {
+                                        // Revert: do not duplicate and do not move the original.
+                                        onOpenFeatureInfoAction(feature._id)
+                                        return
+                                    }
+
+                                    const duplicatedId = onDuplicatePointFeatureAction(feature._id, nextPoint)
                                     if (duplicatedId) {
                                         onSelectRouteAction(null)
                                         onOpenFeatureInfoAction(duplicatedId)
@@ -364,6 +483,7 @@ export function MapFeatureLayers({
                                     return
                                 }
 
+                                endGestureTracking()
                                 onUpdateFeatureCoordinatesAction(feature._id, [nextLng, nextLat])
                                 onOpenFeatureInfoAction(feature._id)
                             }}
@@ -379,16 +499,16 @@ export function MapFeatureLayers({
                                     }}
                                 >
                                     <div
-                                        className="absolute size-8 rounded-full opacity-70"
+                                        className="absolute size-11 rounded-full opacity-70"
                                         style={{ backgroundColor: `${color}22` }}
                                     />
                                     <div
-                                        className="relative h-4 w-4 rounded-full border-2 border-white shadow-lg transition-transform duration-300 hover:scale-110"
+                                        className="relative h-6 w-6 rounded-full border-2 border-white shadow-lg transition-transform duration-300 hover:scale-110"
                                         style={{ backgroundColor: color }}
                                     />
                                     {activeInfoPanelFeatureId === feature._id && (
                                         <div
-                                            className="absolute h-6 w-6 rounded-full border border-white/70"
+                                            className="absolute h-9 w-9 rounded-full border border-white/70"
                                             style={{ backgroundColor: `${color}1a` }}
                                         />
                                     )}
@@ -415,7 +535,7 @@ export function MapFeatureLayers({
                         clusterRadius={34}
                         clusterMaxZoom={17}
                         pointColor={THEME_COLORS.point}
-                        renderPointTooltip={(feature: GeoJsonFeature<GeoJsonPoint, (typeof clusterData.features)[number]['properties']>) => {
+                        renderPointTooltip={isMobile ? undefined : (feature: GeoJsonFeature<GeoJsonPoint, (typeof clusterData.features)[number]['properties']>) => {
                             const featureId = feature.properties?.id
                             const sourceFeature = featureId ? pointFeaturesById.get(featureId) : null
                             if (!sourceFeature) return null
@@ -429,8 +549,8 @@ export function MapFeatureLayers({
                             colorProperty: 'color',
                             categoryColors: clusterCategoryColors,
                             showDominantPercent: true,
-                            minRadius: 17,
-                            maxRadius: 32,
+                            minRadius: 24,
+                            maxRadius: 44,
                         }}
                         coverageOverlayOptions={{
                             enabled: true,

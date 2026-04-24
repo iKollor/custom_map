@@ -57,6 +57,7 @@ export function useMapClientController() {
     const [contextMenuState, setContextMenuState] = useState<ContextMenuState | null>(null)
     const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
     const [isSatelliteView, setIsSatelliteView] = useState(false)
+    const [clusteringEnabled, setClusteringEnabled] = useState(true)
 
     const deferredVisibleFeatures = useDeferredValue(editor.visibleFeatures)
     const { pointFeatures, linearFeatures, routeFeatures, clusterData, summary } = useMemo(
@@ -124,6 +125,10 @@ export function useMapClientController() {
         setIsSatelliteView((prev) => !prev)
     }, [])
 
+    const toggleClustering = useCallback(() => {
+        setClusteringEnabled((prev) => !prev)
+    }, [])
+
     return {
         editor,
         projectDialog,
@@ -152,10 +157,12 @@ export function useMapClientController() {
             defaultZoom,
             mapStyles,
             isSatelliteView,
+            clusteringEnabled,
         },
         actions: {
             logout: handleLogout,
             toggleSatelliteView,
+            toggleClustering,
         },
     }
 }

@@ -31,6 +31,14 @@ type MapPolygonProps = {
     fillOpacity?: number;
     outlineColor?: string;
     outlineOpacity?: number;
+    onClick?: () => void;
+    onContextMenu?: (
+        coords: [number, number],
+        screenPos: { x: number; y: number },
+    ) => void;
+    onMouseEnter?: () => void;
+    onMouseLeave?: () => void;
+    interactive?: boolean;
 };
 
 function MapPolygon({
@@ -40,6 +48,11 @@ function MapPolygon({
     fillOpacity = 0.16,
     outlineColor,
     outlineOpacity = 0.85,
+    onClick,
+    onContextMenu,
+    onMouseEnter,
+    onMouseLeave,
+    interactive = true,
 }: MapPolygonProps) {
     const { map, isLoaded } = useMap();
     const autoId = useId();
@@ -133,6 +146,50 @@ function MapPolygon({
         fillOpacity,
         outlineColor,
         outlineOpacity,
+    ]);
+
+    useEffect(() => {
+        if (!isLoaded || !map || !interactive) return;
+
+        const handleClick = () => {
+            onClick?.();
+        };
+        const handleContextMenuEvent = (e: MapLibreGL.MapMouseEvent) => {
+            e.originalEvent.preventDefault();
+            onContextMenu?.([e.lngLat.lng, e.lngLat.lat], {
+                x: e.originalEvent.clientX,
+                y: e.originalEvent.clientY,
+            });
+        };
+        const handleMouseEnter = () => {
+            map.getCanvas().style.cursor = "pointer";
+            onMouseEnter?.();
+        };
+        const handleMouseLeave = () => {
+            map.getCanvas().style.cursor = "";
+            onMouseLeave?.();
+        };
+
+        map.on("click", fillLayerId, handleClick);
+        map.on("contextmenu", fillLayerId, handleContextMenuEvent);
+        map.on("mouseenter", fillLayerId, handleMouseEnter);
+        map.on("mouseleave", fillLayerId, handleMouseLeave);
+
+        return () => {
+            map.off("click", fillLayerId, handleClick);
+            map.off("contextmenu", fillLayerId, handleContextMenuEvent);
+            map.off("mouseenter", fillLayerId, handleMouseEnter);
+            map.off("mouseleave", fillLayerId, handleMouseLeave);
+        };
+    }, [
+        isLoaded,
+        map,
+        fillLayerId,
+        onClick,
+        onContextMenu,
+        onMouseEnter,
+        onMouseLeave,
+        interactive,
     ]);
 
     return null;

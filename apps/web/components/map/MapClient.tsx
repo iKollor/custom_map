@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
+
 import { Button } from '@workspace/ui/components/button'
 import {
     Dialog,
@@ -18,6 +20,7 @@ import { FeatureContextMenu } from './FeatureContextMenu'
 import { MapEditModeFrame } from './MapEditModeFrame'
 import { FeatureInfoPanel } from './FeatureInfoPanel'
 import { MapFeatureLayers } from './MapFeatureLayers'
+import { MapQuickPointCreation } from './MapQuickPointCreation'
 import { MapStatusOverlay } from './MapStatusOverlay'
 import {
     EditPanel,
@@ -57,6 +60,27 @@ export default function MapClient({ username }: { username: string }) {
         ? (editor.features.find((feature) => feature._id === selection.contextMenuState?.featureId) ?? null)
         : null
 
+    // Mutual exclusion between the filters panel and the feature info panel to avoid
+    // visual overlap (both are anchored near the top-left / bottom on mobile).
+    const filtersOpen = editor.filtersOpen
+    const activeInfoId = selection.activeInfoPanelFeatureId
+    const prevFiltersOpenRef = useRef(filtersOpen)
+    const prevInfoIdRef = useRef(activeInfoId)
+
+    useEffect(() => {
+        const filtersJustOpened = filtersOpen && !prevFiltersOpenRef.current
+        const infoJustOpened = activeInfoId !== null && prevInfoIdRef.current === null
+
+        if (filtersJustOpened && activeInfoId !== null) {
+            selection.openFeatureInfo(null)
+        } else if (infoJustOpened && filtersOpen) {
+            editor.setFiltersOpen(false)
+        }
+
+        prevFiltersOpenRef.current = filtersOpen
+        prevInfoIdRef.current = activeInfoId
+    }, [filtersOpen, activeInfoId, selection, editor])
+
     const handleCopyContextCoordinates = () => {
         const coords = selection.contextMenuState?.coordinates
         if (!coords) return
@@ -82,6 +106,8 @@ export default function MapClient({ username }: { username: string }) {
                 onImportFromProject={editor.importFromProject}
                 filtersOpen={editor.filtersOpen}
                 onToggleFilters={() => editor.setFiltersOpen((open) => !open)}
+                clusteringEnabled={mapConfig.clusteringEnabled}
+                onToggleClustering={actions.toggleClustering}
                 onImport={() => editor.setImportOpen(true)}
                 onExport={editor.handleExport}
                 onLogout={actions.logout}
@@ -155,10 +181,16 @@ export default function MapClient({ username }: { username: string }) {
                     />
                 )}
 
+                <MapQuickPointCreation
+                    editMode={editor.editMode}
+                    onCreatePointAction={editor.handleCreatePointAtCoordinates}
+                />
+
                 <MapFeatureLayers
                     categories={editor.categories}
                     clusterData={derived.clusterData}
                     editMode={editor.editMode}
+                    clusteringEnabled={mapConfig.clusteringEnabled}
                     linearFeatures={derived.linearFeatures}
                     pointFeatures={derived.pointFeatures}
                     resolvedRoutes={derived.resolvedRoutes}

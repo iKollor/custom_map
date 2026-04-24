@@ -306,18 +306,61 @@ function MarkerTooltip({
         if (!map) return;
 
         tooltip.setDOMContent(container);
+        const markerElement = marker.getElement();
+        const supportsHover =
+            typeof window !== "undefined" &&
+            window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 
         const handleMouseEnter = () => {
+            if (!supportsHover) return;
             tooltip.setLngLat(marker.getLngLat()).addTo(map);
         };
         const handleMouseLeave = () => tooltip.remove();
+        const handleMarkerClick = () => tooltip.remove();
+        const handleMapInteraction = () => tooltip.remove();
+        const handleDocumentInteraction = (event: Event) => {
+            const target = event.target as Node | null;
+            if (!target) return;
+            if (markerElement?.contains(target)) return;
+            tooltip.remove();
+        };
 
-        marker.getElement()?.addEventListener("mouseenter", handleMouseEnter);
-        marker.getElement()?.addEventListener("mouseleave", handleMouseLeave);
+        if (supportsHover) {
+            markerElement?.addEventListener("mouseenter", handleMouseEnter);
+            markerElement?.addEventListener("mouseleave", handleMouseLeave);
+        }
+        markerElement?.addEventListener("click", handleMarkerClick);
+        map.on("click", handleMapInteraction);
+        map.on("touchstart", handleMapInteraction);
+        map.on("dragstart", handleMapInteraction);
+        map.on("movestart", handleMapInteraction);
+        map.on("zoomstart", handleMapInteraction);
+        map.on("rotatestart", handleMapInteraction);
+        map.on("pitchstart", handleMapInteraction);
+        document.addEventListener("pointerdown", handleDocumentInteraction, true);
+        document.addEventListener("mousedown", handleDocumentInteraction, true);
+        document.addEventListener("touchstart", handleDocumentInteraction, true);
+        document.addEventListener("click", handleDocumentInteraction, true);
+        window.addEventListener("blur", handleMapInteraction);
 
         return () => {
-            marker.getElement()?.removeEventListener("mouseenter", handleMouseEnter);
-            marker.getElement()?.removeEventListener("mouseleave", handleMouseLeave);
+            if (supportsHover) {
+                markerElement?.removeEventListener("mouseenter", handleMouseEnter);
+                markerElement?.removeEventListener("mouseleave", handleMouseLeave);
+            }
+            markerElement?.removeEventListener("click", handleMarkerClick);
+            map.off("click", handleMapInteraction);
+            map.off("touchstart", handleMapInteraction);
+            map.off("dragstart", handleMapInteraction);
+            map.off("movestart", handleMapInteraction);
+            map.off("zoomstart", handleMapInteraction);
+            map.off("rotatestart", handleMapInteraction);
+            map.off("pitchstart", handleMapInteraction);
+            document.removeEventListener("pointerdown", handleDocumentInteraction, true);
+            document.removeEventListener("mousedown", handleDocumentInteraction, true);
+            document.removeEventListener("touchstart", handleDocumentInteraction, true);
+            document.removeEventListener("click", handleDocumentInteraction, true);
+            window.removeEventListener("blur", handleMapInteraction);
             tooltip.remove();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps

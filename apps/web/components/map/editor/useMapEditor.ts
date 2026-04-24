@@ -391,6 +391,20 @@ export function useMapEditor() {
         [drawMode, categories],
     )
 
+    const handleCreatePointAtCoordinates = useCallback(
+        (point: [number, number]) => {
+            setDrawMode(null)
+            setPendingPoints([point])
+            setFormInitial({
+                type: 'point',
+                coordinates: coordsToWKT([point], 'point'),
+                category: categories[0]?.name ?? '',
+            })
+            setFormOpen(true)
+        },
+        [categories],
+    )
+
     const handleFinishDraw = useCallback(() => {
         if (pendingPoints.length < 2) return
         setFormInitial({
@@ -741,6 +755,7 @@ export function useMapEditor() {
         createNewProject,
         importFromProject,
         handleAddPoint,
+        handleCreatePointAtCoordinates,
         handleFinishDraw,
         handleCancelDraw,
         handleFormSave,

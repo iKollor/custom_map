@@ -5,6 +5,7 @@ import {
     Download,
     Filter,
     FolderOpen,
+    Layers,
     LogOut,
     Menu,
     Pencil,
@@ -22,14 +23,13 @@ import {
     SelectValue,
 } from '@workspace/ui/components/select'
 import {
-    Sheet,
-    SheetClose,
-    SheetContent,
-    SheetDescription,
-    SheetHeader,
-    SheetTitle,
-    SheetTrigger,
-} from '@workspace/ui/components/sheet'
+    Drawer,
+    DrawerContent,
+    DrawerDescription,
+    DrawerHeader,
+    DrawerTitle,
+    DrawerTrigger,
+} from '@/components/ui/drawer'
 import { Separator } from '@workspace/ui/components/separator'
 import {
     DropdownMenu,
@@ -45,6 +45,7 @@ import {
     TooltipTrigger,
 } from '@/components/animate-ui/components/animate/tooltip'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { ClusterToggle } from '@/components/cluster-toggle'
 
 interface ToolbarProps {
     username: string
@@ -55,6 +56,8 @@ interface ToolbarProps {
     onImportFromProject: (sourceProjectId: string) => void
     onToggleFilters: () => void
     filtersOpen: boolean
+    clusteringEnabled: boolean
+    onToggleClustering: () => void
     onImport: () => void
     onExport: () => void
     onLogout: () => void
@@ -183,6 +186,8 @@ function DesktopLeftGroup({
                 <TooltipContent>Filtrar por tipo / categoria</TooltipContent>
             </Tooltip>
 
+            <span className="mx-1 h-5 w-px bg-border" />
+
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
@@ -236,10 +241,12 @@ function DesktopLeftGroup({
     )
 }
 
-function DesktopRightGroup({ username, onLogout }: ToolbarProps) {
+function DesktopRightGroup({ username, onLogout, clusteringEnabled, onToggleClustering }: ToolbarProps) {
     return (
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-border/60 bg-background/95 px-2 py-1.5 shadow-lg backdrop-blur-sm">
             <ThemeToggle />
+
+            <ClusterToggle clusteringEnabled={clusteringEnabled} onToggleClustering={onToggleClustering} />
 
             <span className="mx-1 h-5 w-px bg-border" />
 
@@ -286,6 +293,8 @@ function MobileBar({
     onImportFromProject,
     onToggleFilters,
     filtersOpen,
+    clusteringEnabled,
+    onToggleClustering,
     onImport,
     onExport,
     onLogout,
@@ -298,7 +307,7 @@ function MobileBar({
 
     const closeAnd = (fn: () => void) => () => {
         setMenuOpen(false)
-        // defer action so the sheet closes smoothly before modals mount
+        // Defer action so the drawer closes smoothly before other UI opens.
         requestAnimationFrame(() => fn())
     }
 
@@ -306,8 +315,8 @@ function MobileBar({
         <>
             {/* Hamburger + Project */}
             <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-border/60 bg-background/95 px-1.5 py-1 shadow-lg backdrop-blur-sm">
-                <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-                    <SheetTrigger asChild>
+                <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
+                    <DrawerTrigger asChild>
                         <Button
                             type="button"
                             size="icon-sm"
@@ -317,19 +326,19 @@ function MobileBar({
                         >
                             <Menu className="h-5 w-5" />
                         </Button>
-                    </SheetTrigger>
-                    <SheetContent side="left" className="w-[86vw] max-w-sm p-0">
-                        <SheetHeader className="border-b">
-                            <SheetTitle className="flex items-center gap-2">
+                    </DrawerTrigger>
+                    <DrawerContent className="p-0">
+                        <DrawerHeader className="border-b">
+                            <DrawerTitle className="flex items-center gap-2">
                                 <User className="h-4 w-4 text-blue-600" />
                                 {username}
-                            </SheetTitle>
-                            <SheetDescription className="truncate">
+                            </DrawerTitle>
+                            <DrawerDescription className="truncate">
                                 Proyecto: {activeProject?.name ?? 'Sin proyecto'}
-                            </SheetDescription>
-                        </SheetHeader>
+                            </DrawerDescription>
+                        </DrawerHeader>
 
-                        <div className="flex flex-col gap-1 overflow-y-auto p-3">
+                        <div className="flex max-h-[70vh] flex-col gap-1 overflow-y-auto p-3">
                             <p className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                                 Proyecto
                             </p>
@@ -415,20 +424,18 @@ function MobileBar({
                                 <ThemeToggle />
                             </div>
 
-                            <SheetClose asChild>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    className="mt-2 h-11 w-full justify-start gap-3 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/40"
-                                    onClick={onLogout}
-                                >
-                                    <LogOut className="h-4 w-4" />
-                                    Cerrar sesión
-                                </Button>
-                            </SheetClose>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                className="mt-2 h-11 w-full justify-start gap-3 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/40"
+                                onClick={closeAnd(onLogout)}
+                            >
+                                <LogOut className="h-4 w-4" />
+                                Cerrar sesión
+                            </Button>
                         </div>
-                    </SheetContent>
-                </Sheet>
+                    </DrawerContent>
+                </Drawer>
 
                 <Select value={activeProjectId} onValueChange={onSelectProject}>
                     <SelectTrigger
@@ -473,6 +480,12 @@ function MobileBar({
                 >
                     <Pencil className="h-4 w-4" />
                 </Button>
+            </div>
+
+            <div className="pointer-events-auto fixed left-3 bottom-[max(env(safe-area-inset-bottom),0.75rem)] z-30 md:hidden">
+                <div className="rounded-xl border border-border/60 bg-background/95 px-2.5 py-2 shadow-lg backdrop-blur-sm">
+                    <ClusterToggle clusteringEnabled={clusteringEnabled} onToggleClustering={onToggleClustering} />
+                </div>
             </div>
         </>
     )
