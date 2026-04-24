@@ -118,7 +118,7 @@ function PanelContent({
     const [editingKey, setEditingKey] = useState<string | null>(null)
     const [editingValue, setEditingValue] = useState('')
 
-    const customFields = useMemo(() => feature.customFields ?? {}, [feature.customFields])
+    const customFields = useMemo(() => (feature.customFields as Record<string, string>) ?? {}, [feature.customFields])
 
     const handleAddField = useCallback(() => {
         const trimmedKey = newKey.trim()
