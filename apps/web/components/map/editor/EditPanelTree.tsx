@@ -159,6 +159,13 @@ export function EditPanelTree({
 
     const treeRef = useRef<any>(null)
 
+    // Controlled selection for react-arborist: keeps it in sync with our
+    // selectedFeatureId so there is only ONE visual selection.
+    const treeSelection = useMemo(
+        () => (selectedFeatureId ? selectedFeatureId : undefined),
+        [selectedFeatureId],
+    )
+
     // Open ancestors & scroll into view when selectedFeatureId changes
     useEffect(() => {
         if (!selectedFeatureId || !treeRef.current) return
@@ -173,19 +180,26 @@ export function EditPanelTree({
             parent = parent.parent
         }
 
-        // Give react-arborist time to re-render the newly opened subtree,
-        // then scroll to the node and select it.
-        const raf = requestAnimationFrame(() => {
-            setTimeout(() => {
-                try {
-                    node.scrollTo()
-                    node.select()
-                } catch {
-                    // node may have been removed between frames
+        // react-arborist virtualises the list — the row may not exist in the
+        // DOM until the next render after we opened ancestors. We retry a
+        // few times with increasing delays until scrollTo succeeds.
+        let attempt = 0
+        const maxAttempts = 5
+        const tryScroll = () => {
+            attempt++
+            try {
+                const freshNode = tree.get(selectedFeatureId)
+                if (freshNode) {
+                    freshNode.scrollTo()
+                    return // success
                 }
-            }, 60)
-        })
-        return () => cancelAnimationFrame(raf)
+            } catch { /* ignore */ }
+            if (attempt < maxAttempts) {
+                timerId = window.setTimeout(tryScroll, 80)
+            }
+        }
+        let timerId = window.setTimeout(tryScroll, 30)
+        return () => window.clearTimeout(timerId)
     }, [selectedFeatureId])
 
     return (
@@ -202,6 +216,8 @@ export function EditPanelTree({
                     disableDrop={disableDrop}
                     searchTerm={searchTerm}
                     padding={8}
+                    selection={treeSelection}
+                    disableMultiSelection
                 >
                     {TreeNodeRenderer}
                 </Tree>
@@ -330,7 +346,7 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
     return (
         <div
             style={style}
-            className={`group flex items-center pr-3 py-1 transition-colors relative ${isOver ? 'bg-primary/10' : 'hover:bg-accent/40'} ${node.isSelected ? 'bg-accent/60' : ''} ${isHighlighted ? 'bg-[#6e00a3]/15 ring-1 ring-[#6e00a3]/30' : ''}`}
+            className={`group flex items-center pr-3 py-1 transition-colors relative ${isOver ? 'bg-primary/10' : 'hover:bg-accent/40'} ${isHighlighted ? 'bg-[#6e00a3]/15 ring-1 ring-[#6e00a3]/30' : ''}`}
         >
             {/* Drag Handle */}
             <div
