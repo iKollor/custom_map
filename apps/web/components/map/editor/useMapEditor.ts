@@ -168,6 +168,14 @@ export function useMapEditor() {
     const applyRemoteState = useCallback(
         (state: StoredState, updatedAt: string | null) => {
             applyingRemoteRef.current = true
+            // Marca todos los proyectos recibidos del server como "ya cargados"
+            // para que el auto-loader de rutas CSV NO los rellene en este
+            // cliente (eso duplicaria features en colaboracion: cada cliente
+            // cargaria el CSV con IDs distintos y el merge en server los
+            // mantendria todos como adiciones concurrentes).
+            for (const project of state.projects) {
+                csvLoadedProjectsRef.current.add(project.id)
+            }
             setProjects(state.projects)
             setActiveProjectId((current) =>
                 state.projects.some((project) => project.id === current)
@@ -215,11 +223,9 @@ export function useMapEditor() {
                         : null
 
                 if (serverState) {
-                    setProjects(serverState.projects)
-                    setActiveProjectId(serverState.activeProjectId)
-                    setLastSyncedAt(result.updatedAt)
-                    baselineRef.current = buildBaselineMeta(serverState, result.updatedAt)
-                    setSyncStatus('saved')
+                    // Usar applyRemoteState para que el effect de save NO
+                    // dispare un PUT eco con los datos que acabamos de leer.
+                    applyRemoteState(serverState, result.updatedAt)
                 } else {
                     applyLocalFallback()
                     setSyncStatus('idle')
@@ -237,7 +243,9 @@ export function useMapEditor() {
         return () => {
             cancelled = true
         }
-    }, [])
+        // applyRemoteState es estable (useCallback con []), pero la incluimos
+        // para satisfacer exhaustive-deps; no causa re-runs.
+    }, [applyRemoteState])
 
     // Suscripcion en tiempo real: escucha snapshots emitidos por otros clientes
     // a traves de Server-Sent Events y los aplica localmente sin recargar.

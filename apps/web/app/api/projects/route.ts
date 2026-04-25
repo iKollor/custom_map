@@ -13,6 +13,30 @@ export const runtime = 'nodejs'
 // Single-tenant app: one global row. Swap to per-user id to scope by session.
 const SNAPSHOT_ID = 'default'
 
+// Serializa los PUTs concurrentes en este proceso. Sin esto dos requests
+// simultaneos pueden leer el mismo `current`, mergear por separado y el
+// segundo upsert pisa al primero (perdida de datos). Para multi-instancia
+// hace falta un lock distribuido (Redis/PG advisory lock).
+const globalForLock = globalThis as unknown as {
+    __projectsPutLock?: Promise<unknown>
+}
+async function withProjectsLock<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = globalForLock.__projectsPutLock ?? Promise.resolve()
+    let release!: () => void
+    const next = new Promise<void>((resolve) => {
+        release = resolve
+    })
+    globalForLock.__projectsPutLock = previous.then(() => next)
+    try {
+        await previous.catch(() => {
+            /* ignore previous failures */
+        })
+        return await fn()
+    } finally {
+        release()
+    }
+}
+
 const BaselineMetaSchema = z.object({
     updatedAt: z.string().nullable().optional(),
     projects: z.array(
@@ -90,28 +114,30 @@ export async function PUT(request: Request) {
     const baseline = 'baseline' in parseResult.data ? parseResult.data.baseline : undefined
 
     try {
-        const existing = await prisma.projectSnapshot.findUnique({
-            where: { id: SNAPSHOT_ID },
+        const { merged, updatedAt } = await withProjectsLock(async () => {
+            const existing = await prisma.projectSnapshot.findUnique({
+                where: { id: SNAPSHOT_ID },
+            })
+
+            const currentState = existing
+                ? StoredStateSchema.safeParse(existing.data).data ?? null
+                : null
+
+            const mergedState = mergeStoredState(currentState, incomingState, baseline)
+
+            const saved = await prisma.projectSnapshot.upsert({
+                where: { id: SNAPSHOT_ID },
+                update: { data: mergedState as unknown as object },
+                create: { id: SNAPSHOT_ID, data: mergedState as unknown as object },
+            })
+
+            return { merged: mergedState, updatedAt: saved.updatedAt.toISOString() }
         })
 
-        const currentState = existing
-            ? StoredStateSchema.safeParse(existing.data).data ?? null
-            : null
-
-        const merged = mergeStoredState(currentState, incomingState, baseline)
-
-        const saved = await prisma.projectSnapshot.upsert({
-            where: { id: SNAPSHOT_ID },
-            update: { data: merged as unknown as object },
-            create: { id: SNAPSHOT_ID, data: merged as unknown as object },
-        })
-
-        const updatedAt = saved.updatedAt.toISOString()
         const senderId = request.headers.get('x-client-id')
 
-        // Notificar a TODOS los clientes con el snapshot ya fusionado
-        // (incluido el remitente, para que su estado local converja con
-        // las adiciones concurrentes de otros).
+        // Emite a otros clientes el snapshot ya fusionado. El remitente filtra
+        // por senderId y no lo aplica (recibe los cambios via response del PUT).
         projectsBus.emit(PROJECTS_UPDATE_EVENT, {
             senderId,
             data: merged,
