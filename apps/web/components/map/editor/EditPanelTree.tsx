@@ -126,15 +126,13 @@ export function EditPanelTree({
     }, [categories, features])
 
     const handleMove: MoveHandler<TreeNodeData> = useCallback(({ dragIds, parentId }) => {
-        const draggedId = dragIds[0]
-        if (!draggedId) return
-
-        const isDraggingCategory = categories.some(c => c.id === draggedId)
-        if (isDraggingCategory) {
-            onSetCategoryParent(draggedId, parentId ?? null)
-        } else {
-            // Is feature
-            onSetFeatureCategory(draggedId, parentId ?? null)
+        for (const draggedId of dragIds) {
+            const isDraggingCategory = categories.some(c => c.id === draggedId)
+            if (isDraggingCategory) {
+                onSetCategoryParent(draggedId, parentId ?? null)
+            } else {
+                onSetFeatureCategory(draggedId, parentId ?? null)
+            }
         }
     }, [categories, onSetCategoryParent, onSetFeatureCategory])
 
@@ -159,19 +157,16 @@ export function EditPanelTree({
 
     const treeRef = useRef<any>(null)
 
-    // Controlled selection for react-arborist: keeps it in sync with our
-    // selectedFeatureId so there is only ONE visual selection.
-    const treeSelection = useMemo(
-        () => (selectedFeatureId ? selectedFeatureId : undefined),
-        [selectedFeatureId],
-    )
-
     // Open ancestors & scroll into view when selectedFeatureId changes
     useEffect(() => {
         if (!selectedFeatureId || !treeRef.current) return
         const tree = treeRef.current
         const node = tree.get(selectedFeatureId)
         if (!node) return
+
+        // Deselect any tree-internal selection so we don't show two
+        // competing highlights (tree multi-select vs map highlight).
+        tree.deselectAll()
 
         // Open all parent nodes so the feature row exists in the DOM
         let parent = node.parent
@@ -216,8 +211,6 @@ export function EditPanelTree({
                     disableDrop={disableDrop}
                     searchTerm={searchTerm}
                     padding={8}
-                    selection={treeSelection}
-                    disableMultiSelection
                 >
                     {TreeNodeRenderer}
                 </Tree>
@@ -346,7 +339,7 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
     return (
         <div
             style={style}
-            className={`group flex items-center pr-3 py-1 transition-colors relative ${isOver ? 'bg-primary/10' : 'hover:bg-accent/40'} ${isHighlighted ? 'bg-[#6e00a3]/15 ring-1 ring-[#6e00a3]/30' : ''}`}
+            className={`group flex items-center pr-3 py-1 transition-colors relative ${isOver ? 'bg-primary/10' : 'hover:bg-accent/40'} ${node.isSelected && !isHighlighted ? 'bg-accent/60' : ''} ${isHighlighted ? 'bg-[#6e00a3]/15 ring-1 ring-[#6e00a3]/30' : ''}`}
         >
             {/* Drag Handle */}
             <div
@@ -389,6 +382,7 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
                                     setRenamingId(null)
                                 }}
                                 onKeyDown={(event) => {
+                                    event.stopPropagation()
                                     if (event.key === 'Enter') {
                                         if (renameValue.trim()) onRenameCategory(data.id, renameValue.trim())
                                         setRenamingId(null)
@@ -427,6 +421,7 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
                                     setRenamingId(null)
                                 }}
                                 onKeyDown={(event) => {
+                                    event.stopPropagation()
                                     if (event.key === 'Enter' || event.key === 'Escape') setRenamingId(null)
                                 }}
                                 className="h-6 min-w-0 flex-1 text-xs"
