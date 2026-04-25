@@ -1,431 +1,43 @@
 "use client";
 
 import MapLibreGL from "maplibre-gl";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { Cell, LabelList, Pie, PieChart } from "recharts";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
 
-import {
-    ChartContainer,
-    ChartTooltip,
-    ChartTooltipContent,
-    type ChartConfig,
-} from "@workspace/ui/components/chart";
-
-import { CLUSTER_DEFAULTS, MAP_COLORS } from "./constants";
-import { useMap } from "./core";
-import { MapPopup } from "./popup";
+import { CLUSTER_DEFAULTS, MAP_COLORS } from "../constants";
+import { useMap } from "../core";
+import { MapPopup } from "../popup";
 import {
     buildConvexHull,
     safeRemoveLayer,
     safeRemoveSource,
     wrapLongitudeForView,
-} from "./utils";
+} from "../utils";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-type MapClusterLayerProps<
-    P extends GeoJSON.GeoJsonProperties = GeoJSON.GeoJsonProperties,
-> = {
-    data: string | GeoJSON.FeatureCollection<GeoJSON.Point, P>;
-    clusterMaxZoom?: number;
-    clusterRadius?: number;
-    clusterColors?: [string, string, string];
-    clusterThresholds?: [number, number];
-    pointColor?: string;
-    onPointClick?: (
-        feature: GeoJSON.Feature<GeoJSON.Point, P>,
-        coordinates: [number, number],
-    ) => void;
-    onClusterClick?: (
-        clusterId: number,
-        coordinates: [number, number],
-        pointCount: number,
-    ) => void;
-    renderPointTooltip?: (
-        feature: GeoJSON.Feature<GeoJSON.Point, P>,
-        coordinates: [number, number],
-    ) => ReactNode;
-    pointTooltipClassName?: string;
-    pieOptions?: {
-        enabled?: boolean;
-        categoryProperty: string;
-        colorProperty: string;
-        categoryColors: Record<string, string>;
-        showDominantPercent?: boolean;
-        minRadius?: number;
-        maxRadius?: number;
-    };
-    coverageOverlayOptions?: {
-        enabled?: boolean;
-        fillOpacity?: number;
-        outlineOpacity?: number;
-        maxLeavesPerCluster?: number;
-    };
-};
-
-type ClusterPieSegment = {
-    category: string;
-    color: string;
-    count: number;
-    percent: number;
-};
-
-type ClusterPieDetails = {
-    clusterId: number;
-    pointCount: number;
-    coordinates: [number, number];
-    segments: ClusterPieSegment[];
-};
-
-type ClusterMarkerEntry = {
-    marker: MapLibreGL.Marker;
-    element: HTMLDivElement;
-    root: Root;
-    onClick: (event: MouseEvent) => void;
-    signature: string;
-};
-
-type HoveredPointState<P extends GeoJSON.GeoJsonProperties = GeoJSON.GeoJsonProperties> = {
-    feature: GeoJSON.Feature<GeoJSON.Point, P>;
-    coordinates: [number, number];
-};
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function toCategoryCountKey(category: string) {
-    return `cat_${category.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
-}
-
-/** Devuelve el porcentaje entero (mínimo 1) del segmento respecto del total. */
-function segmentPercent(count: number, total: number) {
-    return Math.max(1, Math.round((count / Math.max(1, total)) * 100));
-}
-
-/** Construye un `ChartConfig` a partir de los segmentos (label → color). */
-function chartConfigFromSegments(
-    segments: Array<{ category?: string; label?: string; color: string }>,
-    extra?: Record<string, { label?: string }>,
-): ChartConfig {
-    const config: ChartConfig = { ...extra };
-    for (const seg of segments) {
-        const key = seg.label ?? seg.category ?? "categoria";
-        config[key] = { label: key, color: seg.color };
-    }
-    return config;
-}
-
-/** Expresión MapLibre en escalones usada para color y radio de clusters. */
-function stepExpression(
-    stops: [number, number],
-    values: [unknown, unknown, unknown],
-) {
-    return [
-        "step",
-        ["get", "point_count"],
-        values[0],
-        stops[0],
-        values[1],
-        stops[1],
-        values[2],
-    ] as unknown as MapLibreGL.ExpressionSpecification;
-}
-
-/** Copia `coordinates` del Point desenvolviendo la longitud cerca de `refLng`. */
-function unwrapPointCoords(
-    feature: GeoJSON.Feature<GeoJSON.Point>,
-    refLng: number,
-): [number, number] {
-    const coords = (feature.geometry as GeoJSON.Point).coordinates.slice() as [
-        number,
-        number,
-    ];
-    while (Math.abs(refLng - coords[0]) > 180) {
-        coords[0] += refLng > coords[0] ? 360 : -360;
-    }
-    return coords;
-}
-
-/** Obtiene un id estable (feature.id o properties.id) para hover dedupe. */
-function getFeatureId(f: {
-    id?: string | number;
-    properties?: unknown;
-}): string | number | undefined {
-    const props = f.properties as { id?: string | number } | null | undefined;
-    return f.id ?? props?.id;
-}
-
-/** Desmonta completamente una entrada de marker (listener + root + marker). */
-function removeMarkerEntry(entry: ClusterMarkerEntry) {
-    entry.element.removeEventListener("click", entry.onClick);
-    entry.marker.remove();
-
-    // Evita desmontar el root de forma síncrona mientras React sigue en render.
-    // Esto previene la advertencia de "Attempted to synchronously unmount a root...".
-    const scheduleUnmount =
-        typeof queueMicrotask === "function"
-            ? queueMicrotask
-            : (cb: () => void) => {
-                  setTimeout(cb, 0);
-              };
-
-    scheduleUnmount(() => {
-        try {
-            entry.root.unmount();
-        } catch {
-            // ignore unmount races on disposed markers
-        }
-    });
-}
-
-function ensureClusterMarkerStyles() {
-    if (typeof document === "undefined") return;
-    if (document.getElementById("mapcn-cluster-marker-styles")) return;
-
-    const style = document.createElement("style");
-    style.id = "mapcn-cluster-marker-styles";
-    style.textContent = `
-    .mapcn-pie-cluster-marker {
-      padding: 0;
-      margin: 0;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      line-height: 0;
-    }
-    .mapcn-pie-cluster-marker-inner {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      height: 100%;
-      transform-origin: center;
-      animation: mapcn-cluster-pop 260ms cubic-bezier(0.22, 1, 0.36, 1);
-      filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.28));
-      transition: transform 180ms ease, filter 180ms ease;
-      will-change: transform;
-    }
-    .mapcn-pie-cluster-marker:hover .mapcn-pie-cluster-marker-inner {
-      transform: scale(1.04);
-      filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.32));
-    }
-    @keyframes mapcn-cluster-pop {
-      0% { transform: scale(0.85); opacity: 0; }
-      70% { transform: scale(1.03); opacity: 1; }
-      100% { transform: scale(1); opacity: 1; }
-    }
-  `;
-    document.head.appendChild(style);
-}
-
-function ClusterPieMarkerChart({
-    radius,
-    total,
-    showPercent,
-    segments,
-}: {
-    radius: number;
-    total: number;
-    showPercent: boolean;
-    segments: Array<{ color: string; count: number; label?: string }>;
-}) {
-    const size = radius * 2;
-    const outerRadius = Math.max(8, radius - 2);
-    const labelFontSize = Math.max(9, Math.round(radius * 0.32));
-
-    const chartConfig = useMemo<ChartConfig>(
-        () =>
-            chartConfigFromSegments(segments, {
-                value: { label: showPercent ? "Porcentaje" : "Cantidad" },
-            }),
-        [segments, showPercent],
-    );
-
-    const data = useMemo(
-        () =>
-            segments.map((segment) => ({
-                category: segment.label ?? "Categoria",
-                value: segment.count,
-                percent: segmentPercent(segment.count, total),
-                fill: segment.color,
-            })),
-        [segments, total],
-    );
-
-    return (
-        <div
-            className="relative flex items-center justify-center opacity-85"
-            style={{ width: size, height: size, overflow: "visible" }}
-        >
-            <ChartContainer
-                config={chartConfig}
-                className="mx-auto aspect-square h-full w-full overflow-visible [&_.recharts-text]:fill-background [&_.recharts-wrapper]:overflow-visible! [&_.recharts-surface]:overflow-visible"
-            >
-                <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                    <ChartTooltip
-                        cursor={false}
-                        allowEscapeViewBox={{ x: true, y: true }}
-                        isAnimationActive={false}
-                        wrapperStyle={{
-                            zIndex: 50,
-                            pointerEvents: "none",
-                            transform: "translate(-50%, 0)",
-                            left: "50%",
-                            top: size + 16,
-                            transition: "none",
-                        }}
-                        content={
-                            <ChartTooltipContent
-                                nameKey="value"
-                                hideLabel
-                                className="min-w-48 px-3 py-2 text-[12px] shadow-lg"
-                            />
-                        }
-                    />
-                    <Pie
-                        data={data}
-                        dataKey="value"
-                        nameKey="category"
-                        outerRadius={outerRadius}
-                        strokeWidth={1.5}
-                        stroke="#ffffff"
-                        fillOpacity={0.85}
-                        isAnimationActive={false}
-                    >
-                        {data.map((entry, index) => (
-                            <Cell key={`${entry.category}-${index}`} fill={entry.fill} />
-                        ))}
-                        <LabelList
-                            dataKey={showPercent ? "percent" : "value"}
-                            className="fill-background"
-                            stroke="none"
-                            fontSize={labelFontSize}
-                            fontWeight={600}
-                            style={{ pointerEvents: "none" }}
-                            formatter={(value) =>
-                                showPercent ? `${value}%` : `${value}`
-                            }
-                        />
-                    </Pie>
-                </PieChart>
-            </ChartContainer>
-        </div>
-    );
-}
-
-// ============================================================================
-// Popup (Recharts + shadcn)
-// ============================================================================
-
-function ClusterPiePopup({
-    details,
-    onClose,
-}: {
-    details: ClusterPieDetails;
-    onClose: () => void;
-}) {
-    const chartConfig = useMemo<ChartConfig>(
-        () => chartConfigFromSegments(details.segments),
-        [details.segments],
-    );
-
-    const chartData = useMemo(
-        () =>
-            details.segments.map((segment) => ({
-                category: segment.category,
-                value: segment.count,
-                percent: segment.percent,
-                fill: segment.color,
-            })),
-        [details.segments],
-    );
-
-    return (
-        <MapPopup
-            longitude={details.coordinates[0]}
-            latitude={details.coordinates[1]}
-            onClose={onClose}
-            closeButton
-            className="min-w-56 p-3"
-            offset={24}
-        >
-            <div className="mb-1 text-xs font-medium text-muted-foreground">
-                Cluster · {details.pointCount} puntos
-            </div>
-            <ChartContainer
-                config={chartConfig}
-                className="mx-auto aspect-square h-40 w-40"
-            >
-                <PieChart>
-                    <ChartTooltip
-                        cursor={false}
-                        content={
-                            <ChartTooltipContent
-                                hideLabel
-                                formatter={(value, _name, item) => {
-                                    const raw = item?.payload as
-                                        | { category?: string; percent?: number }
-                                        | undefined;
-                                    const category = raw?.category ?? "";
-                                    const pct = raw?.percent ?? 0;
-                                    return (
-                                        <div className="flex items-center gap-2">
-                                            <span
-                                                className="size-2.5 rounded-full"
-                                                style={{ background: item?.color }}
-                                            />
-                                            <span className="font-medium">{category}</span>
-                                            <span className="ml-auto tabular-nums">
-                                                {value} ({pct}%)
-                                            </span>
-                                        </div>
-                                    );
-                                }}
-                            />
-                        }
-                    />
-                    <Pie
-                        data={chartData}
-                        dataKey="value"
-                        nameKey="category"
-                        innerRadius={32}
-                        outerRadius={60}
-                        strokeWidth={2}
-                        paddingAngle={1}
-                    >
-                        {chartData.map((entry) => (
-                            <Cell key={entry.category} fill={entry.fill} />
-                        ))}
-                    </Pie>
-                </PieChart>
-            </ChartContainer>
-            <ul className="mt-2 space-y-1 text-xs">
-                {details.segments.map((segment) => (
-                    <li key={segment.category} className="flex items-center gap-2">
-                        <span
-                            className="size-2.5 rounded-full"
-                            style={{ background: segment.color }}
-                        />
-                        <span className="truncate">{segment.category}</span>
-                        <span className="ml-auto tabular-nums text-muted-foreground">
-                            {segment.count} ({segment.percent}%)
-                        </span>
-                    </li>
-                ))}
-            </ul>
-        </MapPopup>
-    );
-}
+import { ClusterPieMarkerChart } from "./cluster-pie-marker";
+import { ClusterPiePopup } from "./cluster-pie-popup";
+import {
+    ensureClusterMarkerStyles,
+    getFeatureId,
+    removeMarkerEntry,
+    segmentPercent,
+    stepExpression,
+    toCategoryCountKey,
+    unwrapPointCoords,
+} from "./helpers";
+import type {
+    ClusterMarkerEntry,
+    ClusterPieDetails,
+    ClusterPieSegment,
+    HoveredPointState,
+    MapClusterLayerProps,
+} from "./types";
 
 // ============================================================================
 // MapClusterLayer
 // ============================================================================
 
-function MapClusterLayer<
+export function MapClusterLayer<
     P extends GeoJSON.GeoJsonProperties = GeoJSON.GeoJsonProperties,
 >({
     data,
@@ -1254,6 +866,3 @@ function MapClusterLayer<
         </>
     );
 }
-
-export { MapClusterLayer };
-export type { MapClusterLayerProps };

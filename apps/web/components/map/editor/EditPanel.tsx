@@ -7,7 +7,7 @@ import {
     X,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@workspace/ui/components/button'
 import { Input } from '@workspace/ui/components/input'
 import {
@@ -42,6 +42,7 @@ interface EditPanelProps {
     onSetCategoryParent: (id: string, parentId: string | null) => void
     onSetFeatureCategory: (id: string, categoryId: string | null) => void
     onDeleteCategory: (id: string) => void
+    onSelectFeature?: (featureId: string) => void
     selectedFeatureId?: string | null
     onClearSelectedFeature?: () => void
 }
@@ -63,11 +64,17 @@ export function EditPanel({
     onSetCategoryParent,
     onSetFeatureCategory,
     onDeleteCategory,
+    onSelectFeature,
     selectedFeatureId,
     onClearSelectedFeature,
 }: EditPanelProps) {
     const [activeTab, setActiveTab] = useState<EditTab>('create')
     const [coordInput, setCoordInput] = useState('')
+
+    // Auto-switch to organize tab when a feature is selected on the map
+    useEffect(() => {
+        if (selectedFeatureId) setActiveTab('organize')
+    }, [selectedFeatureId])
     const [coordError, setCoordError] = useState<string | null>(null)
 
     function parseLatLng(value: string): [number, number] | null {
@@ -258,6 +265,7 @@ export function EditPanel({
                                 onDeleteCategory={onDeleteCategory}
                                 onEditFeature={onEditFeature}
                                 onDeleteFeature={onDeleteFeature}
+                                onSelectFeature={onSelectFeature}
                                 selectedFeatureId={selectedFeatureId}
                                 onClearSelectedFeature={onClearSelectedFeature}
                             />

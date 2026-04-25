@@ -153,6 +153,11 @@ export default function MapClient({ username }: { username: string }) {
                     onSetCategoryParent={editor.handleSetCategoryParent}
                     onSetFeatureCategory={editor.handleSetFeatureCategory}
                     onDeleteCategory={editor.handleDeleteCategory}
+                    onSelectFeature={(featureId) => {
+                        selection.openFeatureInfo(featureId)
+                        selection.setSelectedRouteId(null)
+                        editor.setSelectedFeatureId(featureId)
+                    }}
                     selectedFeatureId={editor.selectedFeatureId}
                     onClearSelectedFeature={() => editor.setSelectedFeatureId(null)}
                 />

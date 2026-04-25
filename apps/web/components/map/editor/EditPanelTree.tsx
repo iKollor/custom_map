@@ -34,6 +34,7 @@ interface EditPanelTreeProps {
     onDeleteCategory: (id: string) => void
     onEditFeature: (feature: ParsedFeature) => void
     onDeleteFeature: (id: string) => void
+    onSelectFeature?: (featureId: string) => void
     selectedFeatureId?: string | null
     onClearSelectedFeature?: () => void
 }
@@ -51,6 +52,7 @@ interface EditTreeContextValue {
     onDeleteCategory: (id: string) => void
     onEditFeature: (feature: ParsedFeature) => void
     onDeleteFeature: (id: string) => void
+    onSelectFeature: ((featureId: string) => void) | undefined
     selectedFeatureId: string | null
 }
 
@@ -69,6 +71,7 @@ export function EditPanelTree({
     onDeleteCategory,
     onEditFeature,
     onDeleteFeature,
+    onSelectFeature,
     selectedFeatureId,
     onClearSelectedFeature
 }: EditPanelTreeProps) {
@@ -150,8 +153,9 @@ export function EditPanelTree({
         onDeleteCategory,
         onEditFeature,
         onDeleteFeature,
+        onSelectFeature,
         selectedFeatureId: selectedFeatureId ?? null
-    }), [renamingId, renameValue, colorPickerId, onRenameCategory, onRecolorCategory, onAddSubcategory, onDeleteCategory, onEditFeature, onDeleteFeature, selectedFeatureId])
+    }), [renamingId, renameValue, colorPickerId, onRenameCategory, onRecolorCategory, onAddSubcategory, onDeleteCategory, onEditFeature, onDeleteFeature, onSelectFeature, selectedFeatureId])
 
     const treeRef = useRef<any>(null)
 
@@ -309,6 +313,7 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
         onDeleteCategory,
         onEditFeature,
         onDeleteFeature,
+        onSelectFeature,
         selectedFeatureId
     } = ctx
 
@@ -338,7 +343,11 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
                 type="button"
                 className="flex min-w-0 flex-1 items-center py-1 text-left"
                 onClick={() => {
-                    if (isCategory) node.toggle()
+                    if (isCategory) {
+                        node.toggle()
+                    } else if (data.featureData && onSelectFeature) {
+                        onSelectFeature(data.featureData._id)
+                    }
                 }}
             >
                 {isCategory ? (
