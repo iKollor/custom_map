@@ -52,10 +52,13 @@ export function normalizeFeatureType(type: string | null | undefined, wkt = ''):
 function parseLINESTRING(wkt: string): [number, number][] {
     const m = wkt.match(/LINESTRING\s*\(([^)]+)\)/i)
     if (!m || !m[1]) return []
-    return m[1].split(',').map((pair) => {
+    return m[1].split(',').reduce<[number, number][]>((acc, pair) => {
         const parts = pair.trim().split(/\s+/)
-        return [parseFloat(parts[0] ?? '0'), parseFloat(parts[1] ?? '0')] as [number, number]
-    })
+        const lng = parseFloat(parts[0] ?? '')
+        const lat = parseFloat(parts[1] ?? '')
+        if (!isNaN(lng) && !isNaN(lat)) acc.push([lng, lat])
+        return acc
+    }, [])
 }
 
 // Parse WKT Point format
@@ -63,7 +66,10 @@ function parsePOINT(wkt: string): [number, number] | null {
     const m = wkt.match(/POINT\s*\(([^)]+)\)/i)
     if (!m || !m[1]) return null
     const parts = m[1].trim().split(/\s+/)
-    return [parseFloat(parts[0] ?? '0'), parseFloat(parts[1] ?? '0')]
+    const lng = parseFloat(parts[0] ?? '')
+    const lat = parseFloat(parts[1] ?? '')
+    if (isNaN(lng) || isNaN(lat)) return null
+    return [lng, lat]
 }
 
 export function parseCoordinates(wkt: string, type: string): [number, number][] | [number, number] | null {
@@ -75,12 +81,16 @@ export function parseCoordinates(wkt: string, type: string): [number, number][] 
     return null
 }
 
-export function coordsToWKT(pts: [number, number][], type: string): string {
+export function coordsToWKT(coords: [number, number][] | [number, number] | null, type: string): string {
+    if (!coords) return ''
     const t = normalizeFeatureType(type)
     if (t === 'point') {
-        const p = pts[0]
-        return p ? `POINT(${p[0]} ${p[1]})` : ''
+        // Point _coords is [lng, lat], not [[lng, lat]]
+        const p = (Array.isArray(coords[0]) ? (coords as [number, number][])[0] : coords) as [number, number] | undefined
+        return p && !isNaN(p[0]) && !isNaN(p[1]) ? `POINT(${p[0]} ${p[1]})` : ''
     }
+    const pts = coords as [number, number][]
+    if (!pts.length) return ''
     return `LINESTRING(${pts.map(([lng, lat]) => `${lng} ${lat}`).join(', ')})`
 }
 
@@ -129,7 +139,7 @@ export function downloadCSV(features: ParsedFeature[], categories: CategoryDef[]
         row.name = f.name
         row.description = f.description ?? ''
         row.type = f.type
-        row.coordinates = coordsToWKT(f._coords as [number, number][], f.type)
+        row.coordinates = coordsToWKT(f._coords, f.type)
 
         if (cat) {
             if (cat.parentId) {
