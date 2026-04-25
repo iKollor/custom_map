@@ -159,31 +159,34 @@ export function EditPanelTree({
 
     const treeRef = useRef<any>(null)
 
-    // Auto-scroll & highlight when selectedFeatureId changes
+    // Open ancestors & scroll into view when selectedFeatureId changes
     useEffect(() => {
         if (!selectedFeatureId || !treeRef.current) return
-        // Open ancestors and scroll to the node
         const tree = treeRef.current
         const node = tree.get(selectedFeatureId)
-        if (node) {
-            // Open all parent nodes
-            let parent = node.parent
-            while (parent && parent.id !== '__REACT_ARBORIST_INTERNAL_ROOT__') {
-                if (!parent.isOpen) parent.open()
-                parent = parent.parent
-            }
-            // Wait for DOM update then scroll
-            setTimeout(() => {
-                node.scrollTo()
-                node.select()
-            }, 100)
+        if (!node) return
+
+        // Open all parent nodes so the feature row exists in the DOM
+        let parent = node.parent
+        while (parent && parent.id !== '__REACT_ARBORIST_INTERNAL_ROOT__') {
+            if (!parent.isOpen) parent.open()
+            parent = parent.parent
         }
-        // Clear after a delay
-        const timer = setTimeout(() => {
-            onClearSelectedFeature?.()
-        }, 3000)
-        return () => clearTimeout(timer)
-    }, [selectedFeatureId, onClearSelectedFeature])
+
+        // Give react-arborist time to re-render the newly opened subtree,
+        // then scroll to the node and select it.
+        const raf = requestAnimationFrame(() => {
+            setTimeout(() => {
+                try {
+                    node.scrollTo()
+                    node.select()
+                } catch {
+                    // node may have been removed between frames
+                }
+            }, 60)
+        })
+        return () => cancelAnimationFrame(raf)
+    }, [selectedFeatureId])
 
     return (
         <EditTreeContext.Provider value={contextValue}>
@@ -327,7 +330,7 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
     return (
         <div
             style={style}
-            className={`group flex items-center pr-3 py-1 transition-colors relative ${isOver ? 'bg-primary/10' : 'hover:bg-accent/40'} ${node.isSelected ? 'bg-accent/60' : ''} ${isHighlighted ? 'bg-[#6e00a3]/15 ring-1 ring-[#6e00a3]/30 animate-pulse' : ''}`}
+            className={`group flex items-center pr-3 py-1 transition-colors relative ${isOver ? 'bg-primary/10' : 'hover:bg-accent/40'} ${node.isSelected ? 'bg-accent/60' : ''} ${isHighlighted ? 'bg-[#6e00a3]/15 ring-1 ring-[#6e00a3]/30' : ''}`}
         >
             {/* Drag Handle */}
             <div

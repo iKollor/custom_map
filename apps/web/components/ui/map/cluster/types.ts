@@ -68,6 +68,17 @@ export type ClusterMarkerEntry = {
     signature: string;
 };
 
+export type ClusterLayerIds = {
+    sourceId: string;
+    clusterLayerId: string;
+    clusterCountLayerId: string;
+    clusterHitLayerId: string;
+    unclusteredLayerId: string;
+    coverageSourceId: string;
+    coverageFillLayerId: string;
+    coverageOutlineLayerId: string;
+};
+
 export type HoveredPointState<P extends GeoJSON.GeoJsonProperties = GeoJSON.GeoJsonProperties> = {
     feature: GeoJSON.Feature<GeoJSON.Point, P>;
     coordinates: [number, number];
