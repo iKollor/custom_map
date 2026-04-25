@@ -177,6 +177,7 @@ export default function MapClient({ username }: { username: string }) {
                     resolvedRoutes={derived.resolvedRoutes}
                     selectedFeatureId={selection.activeSelectedRouteId ?? selection.activeInfoPanelFeatureId ?? null}
                     editMode={editor.editMode}
+                    contextKey={editor.activeProject?.id}
                 />
 
                 {editor.editMode && (

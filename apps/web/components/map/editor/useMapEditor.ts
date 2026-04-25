@@ -24,6 +24,7 @@ import {
     type StoredState,
 } from './types'
 import { z } from 'zod'
+import { buildBaselineMeta, type BaselineMeta } from '@/lib/projectsMerge'
 
 const STORAGE_KEY = 'map-editor-projects-v1'
 
@@ -123,6 +124,27 @@ export function useMapEditor() {
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const pendingPayloadRef = useRef<StoredState | null>(null)
     const inFlightRef = useRef(false)
+    // Identificador estable de este cliente para que el servidor no nos eco-envie
+    // por SSE nuestras propias escrituras.
+    const clientIdRef = useRef<string>('')
+    if (!clientIdRef.current) {
+        clientIdRef.current =
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : `c_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    }
+    // Cuando aplicamos un snapshot recibido por SSE no debemos volver a hacer PUT
+    // (evita loops eco entre clientes).
+    const applyingRemoteRef = useRef(false)
+    // Baseline = vista del estado tal como esta confirmada en el servidor segun
+    // este cliente. Se envia al server en cada PUT para que pueda hacer merge
+    // correcto: distingue entre "feature que no incluyo porque la borre" y
+    // "feature que no conozco porque otro la agrego en paralelo".
+    const baselineRef = useRef<BaselineMeta | null>(null)
+    // Cola de un snapshot remoto recibido por SSE mientras teniamos cambios
+    // locales sin guardar. Se descarta cuando aplicamos la respuesta fusionada
+    // del PUT (que ya contiene esos cambios remotos).
+    const queuedRemoteRef = useRef<{ data: StoredState; updatedAt: string } | null>(null)
     const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
     const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
 
@@ -139,6 +161,25 @@ export function useMapEditor() {
     const [pendingPoints, setPendingPoints] = useState<[number, number][]>([])
     const [formOpen, setFormOpen] = useState(false)
     const [formInitial, setFormInitial] = useState<Partial<FeatureFormValues>>({})
+
+    // Aplica un snapshot recibido del servidor (via SSE o respuesta de PUT) sin
+    // que el effect que persiste vuelva a hacer PUT (evita loop eco) y
+    // actualizando el baseline con el que el server hara merge en futuros PUTs.
+    const applyRemoteState = useCallback(
+        (state: StoredState, updatedAt: string | null) => {
+            applyingRemoteRef.current = true
+            setProjects(state.projects)
+            setActiveProjectId((current) =>
+                state.projects.some((project) => project.id === current)
+                    ? current
+                    : state.activeProjectId,
+            )
+            setLastSyncedAt(updatedAt)
+            baselineRef.current = buildBaselineMeta(state, updatedAt)
+            setSyncStatus('saved')
+        },
+        [],
+    )
 
     useEffect(() => {
         let cancelled = false
@@ -177,6 +218,7 @@ export function useMapEditor() {
                     setProjects(serverState.projects)
                     setActiveProjectId(serverState.activeProjectId)
                     setLastSyncedAt(result.updatedAt)
+                    baselineRef.current = buildBaselineMeta(serverState, result.updatedAt)
                     setSyncStatus('saved')
                 } else {
                     applyLocalFallback()
@@ -196,6 +238,85 @@ export function useMapEditor() {
             cancelled = true
         }
     }, [])
+
+    // Suscripcion en tiempo real: escucha snapshots emitidos por otros clientes
+    // a traves de Server-Sent Events y los aplica localmente sin recargar.
+    useEffect(() => {
+        if (typeof window === 'undefined' || typeof EventSource === 'undefined') return
+
+        let source: EventSource | null = null
+        let openedOnce = false
+        let cancelled = false
+
+        const refetchSnapshot = async () => {
+            try {
+                const response = await fetch('/api/projects', {
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                })
+                if (!response.ok) return
+                const result = (await response.json()) as { data: unknown; updatedAt: string | null }
+                if (cancelled || !result.data) return
+                const parsed = safeParseStoredState(JSON.stringify(result.data))
+                if (!parsed) return
+                applyRemoteState(parsed, result.updatedAt)
+            } catch {
+                /* ignore */
+            }
+        }
+
+        const connect = () => {
+            source = new EventSource('/api/projects/stream', { withCredentials: true })
+
+            source.addEventListener('open', () => {
+                if (openedOnce) {
+                    // Reconexion: pudimos habernos perdido eventos. Resincroniza desde DB.
+                    void refetchSnapshot()
+                }
+                openedOnce = true
+            })
+
+            source.addEventListener('update', (event) => {
+                try {
+                    const payload = JSON.parse((event as MessageEvent).data) as {
+                        senderId: string | null
+                        data: unknown
+                        updatedAt: string
+                    }
+                    if (payload.senderId && payload.senderId === clientIdRef.current) return
+
+                    const parsed = safeParseStoredState(JSON.stringify(payload.data))
+                    if (!parsed) return
+
+                    // Si tenemos cambios locales sin guardar (debounce o PUT en
+                    // vuelo), NO sobrescribimos el estado: encolamos el remoto.
+                    // Cuando nuestro PUT llegue al server, este hara merge y nos
+                    // devolvera el snapshot fusionado (que ya incluye estos
+                    // cambios remotos). Evita el bug de "los demas pierden sus
+                    // edits porque se reemplaza su estado en memoria".
+                    const hasLocalDirty =
+                        pendingPayloadRef.current !== null || inFlightRef.current
+                    if (hasLocalDirty) {
+                        queuedRemoteRef.current = { data: parsed, updatedAt: payload.updatedAt }
+                        return
+                    }
+
+                    applyRemoteState(parsed, payload.updatedAt)
+                } catch {
+                    /* ignore malformed event */
+                }
+            })
+
+            // EventSource reconecta solo en error; nada que hacer aqui.
+        }
+
+        connect()
+
+        return () => {
+            cancelled = true
+            if (source) source.close()
+        }
+    }, [applyRemoteState])
 
     // Load routes from CSV if active project is empty (once per project id)
     useEffect(() => {
@@ -239,6 +360,16 @@ export function useMapEditor() {
         // server state with the empty default before we loaded it).
         if (!hydratedRef.current) return
 
+        // Si este render fue resultado de aplicar un snapshot remoto (SSE o
+        // respuesta merged de un PUT), NO debemos hacer un nuevo PUT con esos
+        // datos: causaria un eco/loop. Importante: NO tocamos el timer ni el
+        // pendingPayloadRef existente — si el usuario tenia cambios locales
+        // sin guardar deben seguir su curso al server.
+        if (applyingRemoteRef.current) {
+            applyingRemoteRef.current = false
+            return
+        }
+
         pendingPayloadRef.current = payload
 
         const flush = async () => {
@@ -254,32 +385,92 @@ export function useMapEditor() {
                 const response = await fetch('/api/projects', {
                     method: 'PUT',
                     credentials: 'same-origin',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payloadToSend),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Client-Id': clientIdRef.current,
+                    },
+                    body: JSON.stringify({
+                        state: payloadToSend,
+                        baseline: baselineRef.current ?? undefined,
+                    }),
                 })
 
                 if (!response.ok) throw new Error(`HTTP ${response.status}`)
-                const result = (await response.json()) as { updatedAt?: string }
-                setLastSyncedAt(result.updatedAt ?? new Date().toISOString())
-                setSyncStatus('saved')
+                const result = (await response.json()) as {
+                    updatedAt?: string
+                    data?: unknown
+                }
+
+                // El server puede devolver un estado fusionado (merge con
+                // adiciones concurrentes de otros clientes). Aplicarlo localmente
+                // para que este cliente vea los cambios remotos sin recargar.
+                if (result.data) {
+                    const merged = safeParseStoredState(JSON.stringify(result.data))
+                    if (merged) {
+                        // Solo aplicar el merge si NO hay un nuevo cambio local
+                        // pendiente: si el usuario siguio editando mientras el
+                        // PUT estaba en vuelo, su edicion ya esta en
+                        // pendingPayloadRef y reemplazar el estado lo perderia.
+                        if (!pendingPayloadRef.current) {
+                            applyRemoteState(merged, result.updatedAt ?? null)
+                        } else {
+                            // Solo refrescamos el baseline para que el siguiente
+                            // PUT lleve el descriptor correcto.
+                            baselineRef.current = buildBaselineMeta(
+                                merged,
+                                result.updatedAt ?? null,
+                            )
+                            setLastSyncedAt(result.updatedAt ?? new Date().toISOString())
+                            setSyncStatus('saved')
+                        }
+                    }
+                } else {
+                    setLastSyncedAt(result.updatedAt ?? new Date().toISOString())
+                    setSyncStatus('saved')
+                }
+
+                // Despues de aplicar el merge ya tenemos lo de los demas. La
+                // cola de remoto deferido es redundante.
+                queuedRemoteRef.current = null
             } catch {
                 setSyncStatus('offline')
             } finally {
                 inFlightRef.current = false
-                // If more changes piled up while we were saving, flush again.
+                // Si se acumularon mas cambios locales mientras guardabamos,
+                // disparar otro flush.
                 if (pendingPayloadRef.current) {
-                    setTimeout(flush, 0)
+                    setTimeout(() => {
+                        void flush()
+                    }, 0)
+                } else if (queuedRemoteRef.current) {
+                    // Habia un snapshot remoto encolado (raro tras aplicar la
+                    // respuesta merged, pero por completitud).
+                    const queued = queuedRemoteRef.current
+                    queuedRemoteRef.current = null
+                    applyRemoteState(queued.data, queued.updatedAt)
                 }
             }
         }
 
+        // (Re)programa debounce. Reemplaza el timer existente para extender el
+        // periodo cada vez que llega un cambio local nuevo.
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-        saveTimerRef.current = setTimeout(flush, 800)
+        saveTimerRef.current = setTimeout(() => {
+            saveTimerRef.current = null
+            void flush()
+        }, 800)
 
+        // Sin cleanup: el timer DEBE sobrevivir a re-renders provocados por
+        // applyRemoteState. De lo contrario se pierden los cambios locales del
+        // cliente que esta editando concurrentemente.
+    }, [activeProjectId, projects, applyRemoteState])
+
+    // Cleanup al desmontar: cancelar cualquier timer pendiente.
+    useEffect(() => {
         return () => {
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
         }
-    }, [activeProjectId, projects])
+    }, [])
 
     const activeProject = useMemo(
         () => projects.find((project) => project.id === activeProjectId) ?? projects[0] ?? null,
@@ -715,15 +906,15 @@ export function useMapEditor() {
             if (!feature) return project
 
             const targetCategory = categoryId ? project.categories.find(c => c.id === categoryId) : null
-            
+
             // Si el drop fue directo en raíz o sin categoría
             if (!targetCategory) {
                 return {
                     ...project,
-                    features: project.features.map(f => 
-                        f._id === id ? { 
-                            ...f, 
-                            category: '', 
+                    features: project.features.map(f =>
+                        f._id === id ? {
+                            ...f,
+                            category: '',
                             subcategory: '',
                             _raw: { ...f._raw, category: '', subcategory: '' }
                         } : f
@@ -745,7 +936,7 @@ export function useMapEditor() {
 
             return {
                 ...project,
-                features: project.features.map(f => 
+                features: project.features.map(f =>
                     f._id === id ? {
                         ...f,
                         category: categoryName,
