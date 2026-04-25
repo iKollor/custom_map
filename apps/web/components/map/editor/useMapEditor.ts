@@ -2,17 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Papa from 'papaparse'
 import { PALETTE } from './constants'
 import {
-    catsFromFeatures,
     coordsToWKT,
     csvRowsToParsed,
     downloadCSV,
+    ensureCategoryIntegrity,
     makeId,
+    migrateV1toV2,
     normalizeFeatureType,
     parseCoordinates,
 } from './helpers'
 import {
-    FeatureFormValuesSchema,
-    MapProjectSchema,
     StoredStateSchema,
     type CategoryDef,
     type CsvRow,
@@ -23,7 +22,6 @@ import {
     type ParsedFeature,
     type StoredState,
 } from './types'
-import { z } from 'zod'
 import { buildBaselineMeta, type BaselineMeta } from '@/lib/projectsMerge'
 
 const STORAGE_KEY = 'map-editor-projects-v1'
@@ -43,48 +41,53 @@ function createProject(name: string): MapProject {
 function safeParseStoredState(raw: string): StoredState | null {
     try {
         const parsedData = JSON.parse(raw)
+
+        // Try new V2 schema first (features use categoryId)
         const parsed = StoredStateSchema.safeParse(parsedData)
-        if (!parsed.success) {
-            console.warn('[safeParseStoredState] Storage structure invalid:', parsed.error.issues)
-            return null
+        if (parsed.success) {
+            const projects = parsed.data.projects.map((project) => {
+                const seen = new Set<string>()
+                const features = project.features.filter((feature) => {
+                    const key = `${feature.name}::${feature.coordinates}`
+                    if (seen.has(key)) return false
+                    seen.add(key)
+                    return true
+                })
+                return {
+                    ...project,
+                    categories: project.categories.map((category) => ({
+                        ...category,
+                        parentId: category.parentId ?? null,
+                    })),
+                    features,
+                }
+            })
+            if (!projects.length) return null
+            const activeProjectId = projects.some((p) => p.id === parsed.data.activeProjectId)
+                ? parsed.data.activeProjectId
+                : projects[0]?.id ?? ''
+            return { activeProjectId, projects }
         }
 
-        const projects = parsed.data.projects.map((project) => {
-            // Dedupe features by name+coordinates (defensive against past duplicates)
-            const seen = new Set<string>()
-            const features = project.features.filter((feature) => {
-                const key = `${feature.name}::${feature.coordinates}`
-                if (seen.has(key)) return false
-                seen.add(key)
-                return true
-            })
-            return {
-                ...project,
-                categories: project.categories.map((category) => ({
-                    ...category,
-                    parentId: category.parentId ?? null,
-                })),
-                features,
-            }
-        })
+        // Fall back to V1 migration (features use category/subcategory strings)
+        const migrated = migrateV1toV2(parsedData)
+        if (migrated) {
+            console.info('[safeParseStoredState] Migrated V1 → V2 (category/subcategory → categoryId)')
+            return migrated
+        }
 
-        if (!projects.length) return null
-
-        const activeProjectId = projects.some((project) => project.id === parsed.data.activeProjectId)
-            ? parsed.data.activeProjectId
-            : projects[0]?.id ?? ''
-
-        return { activeProjectId, projects }
+        console.warn('[safeParseStoredState] Storage structure invalid')
+        return null
     } catch {
         return null
     }
 }
 
 function mergeCategories(base: CategoryDef[], incoming: CategoryDef[]): CategoryDef[] {
-    const byName = new Map<string, CategoryDef>()
+    const byId = new Map<string, CategoryDef>()
 
     for (const category of base) {
-        byName.set(category.name, {
+        byId.set(category.id, {
             ...category,
             parentId: category.parentId ?? null,
             subcategories: Array.from(new Set(category.subcategories ?? [])),
@@ -92,18 +95,17 @@ function mergeCategories(base: CategoryDef[], incoming: CategoryDef[]): Category
     }
 
     for (const category of incoming) {
-        const existing = byName.get(category.name)
+        const existing = byId.get(category.id)
         if (!existing) {
-            byName.set(category.name, {
+            byId.set(category.id, {
                 ...category,
-                id: makeId(),
                 parentId: category.parentId ?? null,
                 subcategories: Array.from(new Set(category.subcategories ?? [])),
             })
             continue
         }
 
-        byName.set(category.name, {
+        byId.set(category.id, {
             ...existing,
             subcategories: Array.from(
                 new Set([...(existing.subcategories ?? []), ...(category.subcategories ?? [])]),
@@ -111,7 +113,7 @@ function mergeCategories(base: CategoryDef[], incoming: CategoryDef[]): Category
         })
     }
 
-    return Array.from(byName.values())
+    return Array.from(byId.values())
 }
 
 export type SyncStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error' | 'offline'
@@ -161,6 +163,7 @@ export function useMapEditor() {
     const [pendingPoints, setPendingPoints] = useState<[number, number][]>([])
     const [formOpen, setFormOpen] = useState(false)
     const [formInitial, setFormInitial] = useState<Partial<FeatureFormValues>>({})
+    const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null)
 
     // Aplica un snapshot recibido del servidor (via SSE o respuesta de PUT) sin
     // que el effect que persiste vuelva a hacer PUT (evita loop eco) y
@@ -340,13 +343,13 @@ export function useMapEditor() {
             .then((response) => response.text())
             .then((text) => {
                 const result = Papa.parse<CsvRow>(text, { header: true, skipEmptyLines: true })
-                const parsedFeatures = csvRowsToParsed(result.data)
+                const { features: parsedFeatures, categories: parsedCategories } = csvRowsToParsed(result.data)
 
                 setProjects((prev) =>
                     prev.map((project) => {
                         if (project.id !== activeProjectId || project.features.length > 0) return project
                         const mergedFeatures = [...project.features, ...parsedFeatures]
-                        const mergedCategories = catsFromFeatures(mergedFeatures, project.categories)
+                        const mergedCategories = mergeCategories(project.categories, parsedCategories)
                         return {
                             ...project,
                             updatedAt: new Date().toISOString(),
@@ -490,7 +493,7 @@ export function useMapEditor() {
 
     useEffect(() => {
         const nextTypes = new Set(features.map((feature) => feature.type))
-        const nextCategories = new Set(categories.map((category) => category.name))
+        const nextCategories = new Set(features.map((feature) => feature.categoryId))
 
         setActiveTypes(nextTypes)
         setActiveCategories(nextCategories)
@@ -513,7 +516,7 @@ export function useMapEditor() {
         if (!newFeatures.length) return
         updateActiveProject((project) => {
             const mergedFeatures = [...project.features, ...newFeatures]
-            const mergedCategories = catsFromFeatures(mergedFeatures, project.categories)
+            const mergedCategories = ensureCategoryIntegrity(mergedFeatures, project.categories)
             return {
                 ...project,
                 features: mergedFeatures,
@@ -573,7 +576,7 @@ export function useMapEditor() {
             return {
                 ...project,
                 features: mergedFeatures,
-                categories: catsFromFeatures(mergedFeatures, categoriesMerged),
+                categories: mergeCategories(project.categories, source.categories),
             }
         })
     }, [activeProject, projects, updateActiveProject])
@@ -593,7 +596,7 @@ export function useMapEditor() {
                     setFormInitial({
                         type: 'point',
                         coordinates: coordsToWKT(next, 'point'),
-                        category: categories[0]?.name ?? '',
+                        categoryId: categories[0]?.id ?? '',
                     })
                     setFormOpen(true)
                 }
@@ -610,7 +613,7 @@ export function useMapEditor() {
             setFormInitial({
                 type: 'point',
                 coordinates: coordsToWKT([point], 'point'),
-                category: categories[0]?.name ?? '',
+                categoryId: categories[0]?.id ?? '',
             })
             setFormOpen(true)
         },
@@ -644,7 +647,7 @@ export function useMapEditor() {
         setFormInitial({
             type: drawMode,
             coordinates: coordsToWKT(coordinatesForSave, drawMode),
-            category: categories[0]?.name ?? '',
+            categoryId: categories[0]?.id ?? '',
         })
         setFormOpen(true)
     }, [pendingPoints, drawMode, categories])
@@ -661,8 +664,6 @@ export function useMapEditor() {
         const raw: CsvRow = {
             type,
             name: values.name,
-            category: values.category,
-            subcategory: values.subcategory,
             description: values.description,
             coordinates: values.coordinates,
         }
@@ -673,7 +674,7 @@ export function useMapEditor() {
             if (values._editId) {
                 nextFeatures = nextFeatures.map((feature) =>
                     feature._id === values._editId
-                        ? ({ ...feature, ...raw, type, _coords: coords, _raw: raw } as ParsedFeature)
+                        ? ({ ...feature, ...raw, type, categoryId: values.categoryId, _coords: coords, _raw: raw } as ParsedFeature)
                         : feature,
                 )
             } else {
@@ -683,15 +684,14 @@ export function useMapEditor() {
                     _raw: raw,
                     type,
                     name: values.name,
-                    category: values.category,
-                    subcategory: values.subcategory,
+                    categoryId: values.categoryId,
                     description: values.description,
                     coordinates: values.coordinates,
                 } as ParsedFeature
                 nextFeatures = [...nextFeatures, newFeature]
             }
 
-            const nextCategories = catsFromFeatures(nextFeatures, project.categories)
+            const nextCategories = ensureCategoryIntegrity(nextFeatures, project.categories)
 
             return {
                 ...project,
@@ -718,8 +718,7 @@ export function useMapEditor() {
             _editId: feature._id,
             name: feature.name,
             type: feature.type,
-            category: feature.category,
-            subcategory: feature.subcategory,
+            categoryId: feature.categoryId,
             description: feature.description,
             coordinates: feature.coordinates,
         })
@@ -798,7 +797,7 @@ export function useMapEditor() {
                 return {
                     ...project,
                     features: nextFeatures,
-                    categories: catsFromFeatures(nextFeatures, project.categories),
+                    categories: ensureCategoryIntegrity(nextFeatures, project.categories),
                 }
             })
 
@@ -822,7 +821,10 @@ export function useMapEditor() {
     const handleAddCategory = useCallback((parentId: string | null = null) => {
         updateActiveProject((project) => {
             const name = `Categoria ${project.categories.length + 1}`
-            const color = PALETTE[project.categories.length % PALETTE.length] ?? '#40A7F4'
+            const parentColor = parentId
+                ? project.categories.find(c => c.id === parentId)?.color
+                : null
+            const color = parentColor || PALETTE[project.categories.length % PALETTE.length] || '#40A7F4'
             return {
                 ...project,
                 categories: [
@@ -833,28 +835,36 @@ export function useMapEditor() {
         })
     }, [updateActiveProject])
 
+    const handleDeleteProject = useCallback((projectId: string) => {
+        setProjects((prev) => {
+            const next = prev.filter((p) => p.id !== projectId)
+            if (!next.length) {
+                const defaultProject = createProject('Proyecto principal')
+                return [defaultProject]
+            }
+            return next
+        })
+        setActiveProjectId((currentId) => {
+            if (currentId === projectId) {
+                const remaining = projects.filter((p) => p.id !== projectId)
+                return remaining[0]?.id ?? ''
+            }
+            return currentId
+        })
+    }, [projects])
+
     const handleRenameCategory = useCallback((id: string, name: string) => {
         const trimmed = name.trim()
         if (!trimmed) return
 
         updateActiveProject((project) => {
-            const oldCategory = project.categories.find((category) => category.id === id)
-            if (!oldCategory) return project
-
             const nextCategories = project.categories.map((category) =>
                 category.id === id ? { ...category, name: trimmed } : category,
-            )
-
-            const nextFeatures = project.features.map((feature) =>
-                feature.category === oldCategory.name
-                    ? { ...feature, category: trimmed, _raw: { ...feature._raw, category: trimmed } }
-                    : feature,
             )
 
             return {
                 ...project,
                 categories: nextCategories,
-                features: nextFeatures,
             }
         })
     }, [updateActiveProject])
@@ -913,43 +923,13 @@ export function useMapEditor() {
             const feature = project.features.find(f => f._id === id)
             if (!feature) return project
 
-            const targetCategory = categoryId ? project.categories.find(c => c.id === categoryId) : null
-
-            // Si el drop fue directo en raíz o sin categoría
-            if (!targetCategory) {
-                return {
-                    ...project,
-                    features: project.features.map(f =>
-                        f._id === id ? {
-                            ...f,
-                            category: '',
-                            subcategory: '',
-                            _raw: { ...f._raw, category: '', subcategory: '' }
-                        } : f
-                    )
-                }
-            }
-
-            // Identificar el padreen caso de ser subcategoría
-            let categoryName = targetCategory.name
-            let subcategoryName = ''
-
-            if (targetCategory.parentId) {
-                const parent = project.categories.find(c => c.id === targetCategory.parentId)
-                if (parent) {
-                    categoryName = parent.name
-                    subcategoryName = targetCategory.name
-                }
-            }
-
             return {
                 ...project,
                 features: project.features.map(f =>
                     f._id === id ? {
                         ...f,
-                        category: categoryName,
-                        subcategory: subcategoryName,
-                        _raw: { ...f._raw, category: categoryName, subcategory: subcategoryName }
+                        categoryId: categoryId ?? '',
+                        _raw: { ...f._raw }
                     } : f
                 )
             }
@@ -1018,14 +998,23 @@ export function useMapEditor() {
             const category = categories.find((item) => item.id === id)
             if (!category) return prev
             const next = new Set(prev)
-            next.delete(category.name)
+            next.delete(category.id)
             return next
         })
     }, [categories, updateActiveProject])
 
     const handleImportRows = useCallback((rows: CsvRow[]) => {
-        addFeatures(csvRowsToParsed(rows))
-    }, [addFeatures])
+        updateActiveProject((project) => {
+            const { features: newFeatures, categories: newCategories } = csvRowsToParsed(rows, project.categories)
+            const mergedFeatures = [...project.features, ...newFeatures]
+            const mergedCategories = mergeCategories(project.categories, newCategories)
+            return {
+                ...project,
+                features: mergedFeatures,
+                categories: mergedCategories,
+            }
+        })
+    }, [updateActiveProject])
 
     const handleExport = useCallback(() => {
         if (!features.length) return
@@ -1078,7 +1067,7 @@ export function useMapEditor() {
         () =>
             features.filter(
                 (feature) =>
-                    activeTypes.has(feature.type) && activeCategories.has(feature.category),
+                    activeTypes.has(feature.type) && activeCategories.has(feature.categoryId),
             ),
         [features, activeTypes, activeCategories],
     )
@@ -1131,6 +1120,7 @@ export function useMapEditor() {
         handleSetFeatureCategory,
         handleReorderCategory,
         handleDeleteCategory,
+        handleDeleteProject,
         handleImportRows,
         handleExport,
         toggleType,
@@ -1140,5 +1130,7 @@ export function useMapEditor() {
         toggleForcedTooltipType,
         toggleForcedTooltipCategory,
         handleToggleEdit,
+        selectedFeatureId,
+        setSelectedFeatureId,
     }
 }

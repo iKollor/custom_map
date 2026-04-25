@@ -8,11 +8,13 @@ import { Input } from '@workspace/ui/components/input'
 import { cn } from '@workspace/ui/lib/utils'
 
 import { useIsMobile } from '@/hooks/use-is-mobile'
+import { featureCategoryName, categoryBreadcrumb, type CategoryDef } from './editor'
 import type { ParsedFeature } from './editor'
 
 type FeatureInfoPanelProps = {
     featureId: string | null
     features: ParsedFeature[]
+    categories: CategoryDef[]
     onCloseAction: () => void
     onEditAction: (feature: ParsedFeature) => void
     onDeleteAction: (id: string) => void
@@ -101,12 +103,14 @@ function FieldRow({ label, value, mono = false }: { label: string; value: string
 
 function PanelContent({
     feature,
+    categories,
     onCloseAction,
     onEditAction,
     onDeleteAction,
     onUpdateCustomFieldsAction,
 }: {
     feature: ParsedFeature
+    categories: CategoryDef[]
     onCloseAction: () => void
     onEditAction: (f: ParsedFeature) => void
     onDeleteAction: (id: string) => void
@@ -259,8 +263,7 @@ function PanelContent({
             <div className="space-y-4 overflow-y-auto p-4">
                 {/* Basic info */}
                 <section className="space-y-2">
-                    <FieldRow label="Categoría" value={feature.category || '—'} />
-                    {feature.subcategory && <FieldRow label="Subcategoría" value={feature.subcategory} />}
+                    <FieldRow label="Categoría" value={featureCategoryName(feature, categories) || '—'} />
                     {feature.description && <FieldRow label="Descripción" value={feature.description} />}
                     {coordString && <FieldRow label="Coordenadas" value={coordString} mono />}
                     {feature.type === 'route' && routeDistance !== null && (
@@ -402,6 +405,7 @@ function PanelContent({
 export function FeatureInfoPanel({
     featureId,
     features,
+    categories,
     onCloseAction,
     onEditAction,
     onDeleteAction,
@@ -466,6 +470,7 @@ export function FeatureInfoPanel({
                         )}
                         <PanelContent
                             feature={feature}
+                            categories={categories}
                             onCloseAction={onCloseAction}
                             onEditAction={onEditAction}
                             onDeleteAction={onDeleteAction}

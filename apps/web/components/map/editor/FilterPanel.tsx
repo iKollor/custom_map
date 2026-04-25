@@ -12,6 +12,7 @@ import {
 import { Checkbox } from '@/components/animate-ui/components/radix/checkbox'
 import { useIsMobile } from '@/hooks/use-is-mobile'
 import { FEATURE_TYPES, TYPE_ICONS, TYPE_LABELS } from './constants'
+import { categoryColorById } from './helpers'
 import type { CategoryDef, FeatureType, ParsedFeature } from './types'
 
 interface FilterPanelProps {
@@ -146,9 +147,10 @@ function FilterBody({
                 <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Categoria</p>
                 <div className="space-y-1.5">
                     {categories.map((cat, index) => {
-                        const count = features.filter((f) => f.category === cat.name).length
-                        const active = activeCategories.has(cat.name)
-                        const tooltipsActive = forcedTooltipCategories.has(cat.name)
+                        const count = features.filter((f) => f.categoryId === cat.id).length
+                        const active = activeCategories.has(cat.id)
+                        const tooltipsActive = forcedTooltipCategories.has(cat.id)
+                        const catColor = categoryColorById(cat.id, categories)
 
                         return (
                             <motion.div
@@ -158,11 +160,11 @@ function FilterBody({
                                 transition={{ delay: 0.08 + index * 0.03, duration: 0.2 }}
                                 role="button"
                                 tabIndex={0}
-                                onClick={() => onToggleCategory(cat.name)}
+                                onClick={() => onToggleCategory(cat.id)}
                                 onKeyDown={(event) => {
                                     if (event.key === 'Enter' || event.key === ' ') {
                                         event.preventDefault()
-                                        onToggleCategory(cat.name)
+                                        onToggleCategory(cat.id)
                                     }
                                 }}
                                 className="group flex cursor-pointer items-center justify-between rounded-xl border border-transparent px-2.5 py-2 transition-all hover:bg-primary/5 dark:hover:bg-primary/10"
@@ -170,7 +172,7 @@ function FilterBody({
                                 <span className="flex items-center gap-2 text-sm text-foreground">
                                     <span
                                         className="h-2.5 w-2.5 shrink-0 rounded-full shadow-sm"
-                                        style={{ backgroundColor: active ? cat.color : '#D1D5DB' }}
+                                        style={{ backgroundColor: active ? catColor : '#D1D5DB' }}
                                     />
                                     {cat.name}
                                 </span>
@@ -180,7 +182,7 @@ function FilterBody({
                                         type="button"
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            onToggleForcedTooltipCategory(cat.name)
+                                            onToggleForcedTooltipCategory(cat.id)
                                         }}
                                         className={`rounded-md p-1 transition-colors hover:bg-primary/10 hover:text-primary ${tooltipsActive ? 'text-primary' : 'text-muted-foreground/40'}`}
                                         title="Mostrar tooltip permanentemente"
@@ -199,7 +201,7 @@ function FilterBody({
                 <p className="text-xs text-muted-foreground">
                     {
                         features.filter(
-                            (f) => activeTypes.has(f.type) && activeCategories.has(f.category),
+                            (f) => activeTypes.has(f.type) && activeCategories.has(f.categoryId),
                         ).length
                     }{' '}
                     de {features.length} elementos visibles

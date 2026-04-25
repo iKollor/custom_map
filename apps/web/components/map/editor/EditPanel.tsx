@@ -42,6 +42,8 @@ interface EditPanelProps {
     onSetCategoryParent: (id: string, parentId: string | null) => void
     onSetFeatureCategory: (id: string, categoryId: string | null) => void
     onDeleteCategory: (id: string) => void
+    selectedFeatureId?: string | null
+    onClearSelectedFeature?: () => void
 }
 
 export function EditPanel({
@@ -61,6 +63,8 @@ export function EditPanel({
     onSetCategoryParent,
     onSetFeatureCategory,
     onDeleteCategory,
+    selectedFeatureId,
+    onClearSelectedFeature,
 }: EditPanelProps) {
     const [activeTab, setActiveTab] = useState<EditTab>('create')
     const [coordInput, setCoordInput] = useState('')
@@ -254,6 +258,8 @@ export function EditPanel({
                                 onDeleteCategory={onDeleteCategory}
                                 onEditFeature={onEditFeature}
                                 onDeleteFeature={onDeleteFeature}
+                                selectedFeatureId={selectedFeatureId}
+                                onClearSelectedFeature={onClearSelectedFeature}
                             />
                         </div>
                     </TabsContent>

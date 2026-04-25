@@ -16,7 +16,7 @@ import {
 import { useIsMobile } from '@/hooks/use-is-mobile'
 import { useReverseGeocode } from '@/hooks/useReverseGeocode'
 
-import { THEME_COLORS, categoryColor, type CategoryDef, type ParsedFeature } from './editor'
+import { THEME_COLORS, categoryColorById, featureCategoryName, type CategoryDef, type ParsedFeature } from './editor'
 import type { ClusterData, ResolvedRouteState } from './map-client-types'
 import { getRenderableCoordinates, getSectionPolygonCoordinates, sortLinearFeatures } from './map-client-utils'
 
@@ -28,7 +28,7 @@ type FeatureTooltipProps = {
 
 function FeatureTooltip({ feature, coordinates, categories }: FeatureTooltipProps) {
     const { address, loading } = useReverseGeocode(coordinates[0], coordinates[1], feature.type === 'point')
-    const swatchColor = categoryColor(feature.subcategory || feature.category, categories)
+    const swatchColor = categoryColorById(feature.categoryId, categories)
     const locationText = feature.type === 'point'
         ? loading
             ? 'Buscando dirección…'
@@ -48,7 +48,7 @@ function FeatureTooltip({ feature, coordinates, categories }: FeatureTooltipProp
                 </p>
             </div>
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {feature.subcategory || feature.category || 'Sin categoría'}
+                {featureCategoryName(feature, categories) || 'Sin categoría'}
             </p>
             <div className="grid grid-cols-1 gap-2 rounded-md border border-border/60 bg-background/60 p-2">
                 <div>
@@ -199,7 +199,7 @@ function LineFeatureTooltip({
     sectionPolygon: [number, number][]
     pointFeatures: ParsedFeature[]
 }) {
-    const swatchColor = categoryColor(feature.subcategory || feature.category, categories)
+    const swatchColor = categoryColorById(feature.categoryId, categories)
 
     if (feature.type === 'route') {
         const providerDistance = findMetricValue(feature, ['distance_km', 'distance', 'distancia_km', 'distancia'])
@@ -220,7 +220,7 @@ function LineFeatureTooltip({
                     <p className="truncate text-[13px] font-semibold leading-tight">{feature.name}</p>
                 </div>
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {feature.subcategory || feature.category || 'Sin categoría'}
+                    {featureCategoryName(feature, categories) || 'Sin categoría'}
                 </p>
                 <div className="grid grid-cols-2 gap-2 rounded-md border border-border/60 bg-background/60 p-2">
                     <div>
@@ -245,7 +245,7 @@ function LineFeatureTooltip({
         : []
 
     const byCategory = enclosed.reduce((acc, pointFeature) => {
-        const key = pointFeature.subcategory || pointFeature.category || 'Sin categoría'
+        const key = featureCategoryName(pointFeature, categories) || 'Sin categoría'
         acc.set(key, (acc.get(key) ?? 0) + 1)
         return acc
     }, new Map<string, number>())
@@ -267,7 +267,7 @@ function LineFeatureTooltip({
                 <p className="truncate text-[13px] font-semibold leading-tight">{feature.name}</p>
             </div>
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {feature.subcategory || feature.category || 'Sin categoría'}
+                {featureCategoryName(feature, categories) || 'Sin categoría'}
             </p>
 
             <div className="grid grid-cols-2 gap-2 rounded-md border border-border/60 bg-background/60 p-2">
@@ -295,7 +295,10 @@ function LineFeatureTooltip({
                                     className="h-full rounded-full"
                                     style={{
                                         width: `${Math.max(8, (count / maxBar) * 100)}%`,
-                                        backgroundColor: categoryColor(categoryName, categories),
+                                        backgroundColor: categoryColorById(
+                                            categories.find(c => c.name === categoryName)?.id ?? '',
+                                            categories
+                                        ),
                                     }}
                                 />
                             </div>
@@ -602,7 +605,7 @@ export function MapFeatureLayers({
                     ? getSectionPolygonCoordinates(feature, resolvedRoutes)
                     : []
                 const isSelected = activeSelectedRouteId === feature._id
-                const color = categoryColor(feature.subcategory || feature.category, categories)
+                const color = categoryColorById(feature.categoryId, categories)
 
                 return (
                     <RouteFeature
@@ -710,7 +713,7 @@ export function MapFeatureLayers({
             {editMode || !clusteringEnabled ? (
                 pointFeatures.map((feature) => {
                     const [lng, lat] = feature._coords as [number, number]
-                    const color = categoryColor(feature.subcategory || feature.category, categories)
+                    const color = categoryColorById(feature.categoryId, categories)
                     const duplicateReady = armedDuplicatePointId === feature._id
                     const duplicateDragging = dragDuplicatePointId === feature._id
 
@@ -959,7 +962,7 @@ export function MapFeatureLayers({
                 })}
 
             {/* Forced Tooltips */}
-            {[...pointFeatures, ...linearFeatures].filter((f) => forcedTooltipTypes.has(f.type) || forcedTooltipCategories.has(f.category)).map((feature) => {
+            {[...pointFeatures, ...linearFeatures].filter((f) => forcedTooltipTypes.has(f.type) || forcedTooltipCategories.has(f.categoryId)).map((feature) => {
                 let coordinates: [number, number] | null = null
 
                 if (feature.type === 'point' && isPointCoords(feature._coords)) {

@@ -113,6 +113,7 @@ export default function MapClient({ username }: { username: string }) {
                 onLogout={actions.logout}
                 editMode={editor.editMode}
                 onToggleEdit={editor.handleToggleEdit}
+                onDeleteProject={editor.handleDeleteProject}
             />
 
             <FilterPanel
@@ -152,6 +153,8 @@ export default function MapClient({ username }: { username: string }) {
                     onSetCategoryParent={editor.handleSetCategoryParent}
                     onSetFeatureCategory={editor.handleSetFeatureCategory}
                     onDeleteCategory={editor.handleDeleteCategory}
+                    selectedFeatureId={editor.selectedFeatureId}
+                    onClearSelectedFeature={() => editor.setSelectedFeatureId(null)}
                 />
             )}
 
@@ -205,7 +208,10 @@ export default function MapClient({ username }: { username: string }) {
                     activeSelectedRouteId={selection.activeSelectedRouteId}
                     forcedTooltipTypes={editor.forcedTooltipTypes}
                     forcedTooltipCategories={editor.forcedTooltipCategories}
-                    onOpenFeatureInfoAction={selection.openFeatureInfo}
+                    onOpenFeatureInfoAction={(id) => {
+                        selection.openFeatureInfo(id)
+                        if (editor.editMode && id) editor.setSelectedFeatureId(id)
+                    }}
                     onSelectRouteAction={selection.setSelectedRouteId}
                     onOpenContextMenuAction={selection.openContextMenu}
                     onUpdateFeatureCoordinatesAction={editor.handleUpdateFeatureCoordinates}
@@ -216,6 +222,7 @@ export default function MapClient({ username }: { username: string }) {
             <FeatureInfoPanel
                 featureId={selection.activeInfoPanelFeatureId}
                 features={editor.features}
+                categories={editor.categories}
                 onCloseAction={() => selection.openFeatureInfo(null)}
                 onEditAction={editor.handleEditFeature}
                 onDeleteAction={editor.handleDeleteFeature}

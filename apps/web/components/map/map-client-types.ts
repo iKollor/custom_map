@@ -4,7 +4,6 @@ export type PointFeatureProperties = {
     id: string
     name: string
     category: string
-    subcategory: string
     description: string
     color: string
 }

@@ -11,14 +11,17 @@ export { CONTEXT_MENU_LABELS, FEATURE_TYPES, PALETTE, THEME_COLORS, TYPE_ICONS, 
 
 // Utilities & Helpers
 export {
-    categoryColor,
-    catsFromFeatures,
+    categoryBreadcrumb,
+    categoryColorById,
     coordsToWKT,
     csvRowsToParsed,
     downloadCSV,
+    ensureCategoryIntegrity,
+    featureCategoryName,
     isLineCoordinates,
     isPointCoordinates,
     makeId,
+    migrateV1toV2,
     normalizeFeatureType,
     parseCoordinates,
 } from './helpers'

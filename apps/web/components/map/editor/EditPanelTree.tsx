@@ -7,9 +7,9 @@ import { Input } from '@workspace/ui/components/input'
 import { HexColorPicker } from '@workspace/ui/components/color-picker'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@workspace/ui/components/alert-dialog'
 import useMeasure from 'react-use-measure'
-import { categoryColor } from './helpers'
+import { categoryColorById } from './helpers'
 import { TYPE_ICONS } from './constants'
-import { useMemo, useState, createContext, useContext, useCallback, memo } from 'react'
+import { useMemo, useState, createContext, useContext, useCallback, memo, useEffect, useRef } from 'react'
 import type { CategoryDef, ParsedFeature } from './types'
 
 export type TreeNodeData = {
@@ -34,6 +34,8 @@ interface EditPanelTreeProps {
     onDeleteCategory: (id: string) => void
     onEditFeature: (feature: ParsedFeature) => void
     onDeleteFeature: (id: string) => void
+    selectedFeatureId?: string | null
+    onClearSelectedFeature?: () => void
 }
 
 interface EditTreeContextValue {
@@ -49,7 +51,10 @@ interface EditTreeContextValue {
     onDeleteCategory: (id: string) => void
     onEditFeature: (feature: ParsedFeature) => void
     onDeleteFeature: (id: string) => void
+    selectedFeatureId: string | null
 }
+
+
 
 const EditTreeContext = createContext<EditTreeContextValue | null>(null)
 
@@ -63,7 +68,9 @@ export function EditPanelTree({
     onAddSubcategory,
     onDeleteCategory,
     onEditFeature,
-    onDeleteFeature
+    onDeleteFeature,
+    selectedFeatureId,
+    onClearSelectedFeature
 }: EditPanelTreeProps) {
     const [ref, bounds] = useMeasure()
     const [searchTerm] = useState('')
@@ -81,32 +88,13 @@ export function EditPanelTree({
                 name: cat.name,
                 type: 'category',
                 categoryData: cat,
-                inheritedColor: categoryColor(cat.name, categories),
-                usedCount: features.filter(f => cat.parentId ? f.subcategory === cat.name : (!f.subcategory && f.category === cat.name)).length,
+                inheritedColor: categoryColorById(cat.id, categories),
+                usedCount: features.filter(f => f.categoryId === cat.id).length,
                 children: []
             })
         }
 
         for (const f of features) {
-            let parentCatId = null
-
-            if (f.subcategory) {
-                for (const cat of categories) {
-                    if (cat.name === f.subcategory) {
-                        // Opcionalmente verificar que su padre sea f.category
-                        parentCatId = cat.id
-                        break
-                    }
-                }
-            } else if (f.category) {
-                for (const cat of categories) {
-                    if (cat.name === f.category) {
-                        parentCatId = cat.id
-                        break
-                    }
-                }
-            }
-
             const node: TreeNodeData = {
                 id: f._id,
                 name: f.name,
@@ -115,8 +103,8 @@ export function EditPanelTree({
                 children: undefined // Features cannot have children (leaf node)
             }
 
-            if (parentCatId && byId.has(parentCatId)) {
-                byId.get(parentCatId)!.children!.push(node)
+            if (f.categoryId && byId.has(f.categoryId)) {
+                byId.get(f.categoryId)!.children!.push(node)
             } else {
                 root.push(node)
             }
@@ -161,13 +149,43 @@ export function EditPanelTree({
         onAddSubcategory,
         onDeleteCategory,
         onEditFeature,
-        onDeleteFeature
-    }), [renamingId, renameValue, colorPickerId, onRenameCategory, onRecolorCategory, onAddSubcategory, onDeleteCategory, onEditFeature, onDeleteFeature])
+        onDeleteFeature,
+        selectedFeatureId: selectedFeatureId ?? null
+    }), [renamingId, renameValue, colorPickerId, onRenameCategory, onRecolorCategory, onAddSubcategory, onDeleteCategory, onEditFeature, onDeleteFeature, selectedFeatureId])
+
+    const treeRef = useRef<any>(null)
+
+    // Auto-scroll & highlight when selectedFeatureId changes
+    useEffect(() => {
+        if (!selectedFeatureId || !treeRef.current) return
+        // Open ancestors and scroll to the node
+        const tree = treeRef.current
+        const node = tree.get(selectedFeatureId)
+        if (node) {
+            // Open all parent nodes
+            let parent = node.parent
+            while (parent && parent.id !== '__REACT_ARBORIST_INTERNAL_ROOT__') {
+                if (!parent.isOpen) parent.open()
+                parent = parent.parent
+            }
+            // Wait for DOM update then scroll
+            setTimeout(() => {
+                node.scrollTo()
+                node.select()
+            }, 100)
+        }
+        // Clear after a delay
+        const timer = setTimeout(() => {
+            onClearSelectedFeature?.()
+        }, 3000)
+        return () => clearTimeout(timer)
+    }, [selectedFeatureId, onClearSelectedFeature])
 
     return (
         <EditTreeContext.Provider value={contextValue}>
             <div className="flex min-h-0 flex-1 flex-col" ref={ref}>
                 <Tree<TreeNodeData>
+                    ref={treeRef}
                     data={data}
                     width={bounds.width}
                     height={bounds.height}
@@ -240,7 +258,7 @@ function CategoryColorPopover({
                     <HexColorPicker
                         color={localColor}
                         onChange={setLocalColor}
-                        className="!w-full"
+                        className="w-full!"
                     />
                 </div>
                 <div className="flex w-full gap-2 mt-4">
@@ -290,7 +308,8 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
         onAddSubcategory,
         onDeleteCategory,
         onEditFeature,
-        onDeleteFeature
+        onDeleteFeature,
+        selectedFeatureId
     } = ctx
 
     const { data, isOpen } = node
@@ -298,11 +317,12 @@ const TreeNodeRenderer = memo(function TreeNodeRenderer({ node, style, dragHandl
     const inheritedColor = data.inheritedColor || '#40a7f4'
     const state = node.state as { isOverDropTarget?: boolean }; // safe since internal arbor props are obscured
     const isOver = state && state.isOverDropTarget;
+    const isHighlighted = !isCategory && selectedFeatureId === data.id;
 
     return (
         <div
             style={style}
-            className={`group flex items-center pr-3 py-1 transition-colors relative ${isOver ? 'bg-primary/10' : 'hover:bg-accent/40'} ${node.isSelected ? 'bg-accent/60' : ''}`}
+            className={`group flex items-center pr-3 py-1 transition-colors relative ${isOver ? 'bg-primary/10' : 'hover:bg-accent/40'} ${node.isSelected ? 'bg-accent/60' : ''} ${isHighlighted ? 'bg-[#6e00a3]/15 ring-1 ring-[#6e00a3]/30 animate-pulse' : ''}`}
         >
             {/* Drag Handle */}
             <div

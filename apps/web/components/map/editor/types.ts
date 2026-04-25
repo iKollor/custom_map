@@ -16,12 +16,13 @@ export type CategoryDef = z.infer<typeof CategoryDefSchema>
 
 export type DrawMode = FeatureType | null
 
+// ---------- Feature schemas ----------
+// New canonical schema: features reference their category by UUID.
 const BaseFeatureSchema = z.object({
     _id: z.string(),
     _raw: z.record(z.string(), z.unknown()).catch({}),
     name: z.string(),
-    category: z.string(),
-    subcategory: z.string(),
+    categoryId: z.string(),        // UUID reference to CategoryDef.id ('' = uncategorized)
     coordinates: z.string(),
     description: z.string(),
     customFields: z.record(z.string(), z.string()).optional(),
@@ -52,21 +53,53 @@ export const ParsedFeatureSchema = z.discriminatedUnion('type', [
 ])
 export type ParsedFeature = z.infer<typeof ParsedFeatureSchema>
 
+// ---------- Legacy feature schema (V1, for migration) ----------
+// Old format had category/subcategory as strings instead of categoryId.
+const LegacyBaseFeatureSchema = z.object({
+    _id: z.string(),
+    _raw: z.record(z.string(), z.unknown()).catch({}),
+    name: z.string(),
+    category: z.string(),
+    subcategory: z.string(),
+    coordinates: z.string(),
+    description: z.string(),
+    customFields: z.record(z.string(), z.string()).optional(),
+})
+
+export const LegacyPointFeatureSchema = LegacyBaseFeatureSchema.extend({
+    type: z.literal('point'),
+    _coords: z.tuple([z.number(), z.number()]).nullable(),
+})
+
+export const LegacyRouteFeatureSchema = LegacyBaseFeatureSchema.extend({
+    type: z.literal('route'),
+    _coords: z.array(z.tuple([z.number(), z.number()])).nullable(),
+})
+
+export const LegacySectionFeatureSchema = LegacyBaseFeatureSchema.extend({
+    type: z.literal('section'),
+    _coords: z.array(z.tuple([z.number(), z.number()])).nullable(),
+})
+
+export const LegacyParsedFeatureSchema = z.discriminatedUnion('type', [
+    LegacyPointFeatureSchema,
+    LegacyRouteFeatureSchema,
+    LegacySectionFeatureSchema,
+])
+export type LegacyParsedFeature = z.infer<typeof LegacyParsedFeatureSchema>
+
+// ---------- Form values ----------
 export const FeatureFormValuesSchema = z.object({
     name: z.string().min(1, 'El nombre es obligatorio'),
     type: FeatureTypeSchema,
-    category: z.string().min(1, 'La categoria es obligatoria'),
-    newCategory: z.string(),
-    subcategory: z.string(),
+    categoryId: z.string(),        // UUID of selected category ('' = uncategorized)
     description: z.string(),
     coordinates: z.string(),
     _editId: z.string().optional(),
-}).refine(data => data.category !== '__new__' || data.newCategory.trim().length > 0, {
-    message: "El nombre de la nueva categoria es requerido",
-    path: ["newCategory"],
 })
 export type FeatureFormValues = z.infer<typeof FeatureFormValuesSchema>
 
+// ---------- Project / StoredState ----------
 export const MapProjectSchema = z.object({
     id: z.string(),
     name: z.string(),
@@ -77,8 +110,25 @@ export const MapProjectSchema = z.object({
 })
 export type MapProject = z.infer<typeof MapProjectSchema>
 
+// Legacy project schema — features use old category/subcategory strings.
+export const LegacyMapProjectSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    categories: z.array(CategoryDefSchema),
+    features: z.array(LegacyParsedFeatureSchema),
+})
+
 export const StoredStateSchema = z.object({
     activeProjectId: z.string(),
     projects: z.array(MapProjectSchema),
 })
 export type StoredState = z.infer<typeof StoredStateSchema>
+
+// Legacy stored state for migration detection.
+export const LegacyStoredStateSchema = z.object({
+    activeProjectId: z.string(),
+    projects: z.array(LegacyMapProjectSchema),
+})
+export type LegacyStoredState = z.infer<typeof LegacyStoredStateSchema>

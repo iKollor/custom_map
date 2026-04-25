@@ -10,6 +10,7 @@ import {
     Menu,
     Pencil,
     Plus,
+    Trash2,
     Upload,
     User,
 } from 'lucide-react'
@@ -63,6 +64,7 @@ interface ToolbarProps {
     onLogout: () => void
     editMode: boolean
     onToggleEdit: () => void
+    onDeleteProject?: (projectId: string) => void
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -98,6 +100,7 @@ function DesktopLeftGroup({
     onExport,
     editMode,
     onToggleEdit,
+    onDeleteProject,
 }: ToolbarProps) {
     const sourceProjects = projects.filter((project) => project.id !== activeProjectId)
 
@@ -135,6 +138,28 @@ function DesktopLeftGroup({
                 </TooltipTrigger>
                 <TooltipContent>Nuevo proyecto</TooltipContent>
             </Tooltip>
+
+            {projects.length > 1 && (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            onClick={() => {
+                                if (window.confirm('¿Eliminar este proyecto? Esta acción no se puede deshacer.')) {
+                                    onDeleteProject?.(activeProjectId)
+                                }
+                            }}
+                            aria-label="Eliminar proyecto"
+                            className="text-muted-foreground hover:text-destructive"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Eliminar proyecto</TooltipContent>
+                </Tooltip>
+            )}
 
             <DropdownMenu>
                 <Tooltip>
@@ -300,6 +325,7 @@ function MobileBar({
     onLogout,
     editMode,
     onToggleEdit,
+    onDeleteProject,
 }: ToolbarProps) {
     const [menuOpen, setMenuOpen] = useState(false)
     const sourceProjects = projects.filter((project) => project.id !== activeProjectId)
@@ -351,6 +377,22 @@ function MobileBar({
                                 <Plus className="h-4 w-4" />
                                 Nuevo proyecto
                             </Button>
+
+                            {projects.length > 1 && (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    className="h-11 w-full justify-start gap-3 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/40"
+                                    onClick={closeAnd(() => {
+                                        if (window.confirm('¿Eliminar este proyecto? Esta acción no se puede deshacer.')) {
+                                            onDeleteProject?.(activeProjectId)
+                                        }
+                                    })}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Eliminar proyecto
+                                </Button>
+                            )}
 
                             {sourceProjects.length > 0 && (
                                 <>

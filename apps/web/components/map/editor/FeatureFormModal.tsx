@@ -1,5 +1,6 @@
-import { CheckCheck, Edit2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { CheckCheck, ChevronRight, Edit2, FolderPlus, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { motion } from 'motion/react'
 import { Button } from '@workspace/ui/components/button'
 import {
     Dialog,
@@ -11,16 +12,10 @@ import {
 } from '@workspace/ui/components/dialog'
 import { Input } from '@workspace/ui/components/input'
 import { Label } from '@workspace/ui/components/label'
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@workspace/ui/components/select'
 import { Textarea } from '@workspace/ui/components/textarea'
 import { FEATURE_TYPES, TYPE_ICONS, TYPE_LABELS } from './constants'
-import { FeatureFormValuesSchema, type CategoryDef, type FeatureFormValues } from './types'
+import { categoryBreadcrumb, categoryColorById, makeId } from './helpers'
+import type { CategoryDef, FeatureFormValues } from './types'
 
 interface FeatureFormModalProps {
     open: boolean
@@ -30,6 +25,231 @@ interface FeatureFormModalProps {
     onCancel: () => void
 }
 
+// ─── Tree data builder ──────────────────────────────────────────────────────
+type CatTreeNode = {
+    cat: CategoryDef
+    children: CatTreeNode[]
+    depth: number
+}
+
+function buildCategoryTree(categories: CategoryDef[]): CatTreeNode[] {
+    const byId = new Map(categories.map(c => [c.id, c]))
+    const childrenOf = new Map<string | null, CategoryDef[]>()
+    for (const c of categories) {
+        const key = c.parentId ?? null
+        const list = childrenOf.get(key) ?? []
+        list.push(c)
+        childrenOf.set(key, list)
+    }
+
+    function build(parentId: string | null, depth: number): CatTreeNode[] {
+        const children = childrenOf.get(parentId) ?? []
+        return children.map(cat => ({
+            cat,
+            children: build(cat.id, depth + 1),
+            depth,
+        }))
+    }
+
+    return build(null, 0)
+}
+
+// ─── Category Tree Picker ───────────────────────────────────────────────────
+function CategoryTreePicker({
+    categories,
+    selectedId,
+    onSelect,
+    onCreateChild,
+}: {
+    categories: CategoryDef[]
+    selectedId: string
+    onSelect: (id: string) => void
+    onCreateChild: (parentId: string | null, name: string) => void
+}) {
+    const tree = useMemo(() => buildCategoryTree(categories), [categories])
+    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+    const [creatingUnder, setCreatingUnder] = useState<string | null | false>(false)
+    const [newCatName, setNewCatName] = useState('')
+
+    // Auto-expand ancestors of selected category
+    useEffect(() => {
+        if (!selectedId) return
+        const byId = new Map(categories.map(c => [c.id, c]))
+        const expand = new Set<string>()
+        let current = byId.get(selectedId)
+        while (current?.parentId) {
+            expand.add(current.parentId)
+            current = byId.get(current.parentId)
+        }
+        if (expand.size > 0) {
+            setExpandedIds(prev => new Set([...prev, ...expand]))
+        }
+    }, [selectedId, categories])
+
+    function toggleExpand(id: string) {
+        setExpandedIds(prev => {
+            const next = new Set(prev)
+            next.has(id) ? next.delete(id) : next.add(id)
+            return next
+        })
+    }
+
+    function handleCreate() {
+        const trimmed = newCatName.trim()
+        if (!trimmed || creatingUnder === false) return
+        onCreateChild(creatingUnder, trimmed)
+        setNewCatName('')
+        setCreatingUnder(false)
+    }
+
+    function renderNode(node: CatTreeNode) {
+        const isSelected = node.cat.id === selectedId
+        const isExpanded = expandedIds.has(node.cat.id)
+        const hasChildren = node.children.length > 0
+        const color = categoryColorById(node.cat.id, categories)
+
+        return (
+            <div key={node.cat.id}>
+                <button
+                    type="button"
+                    onClick={() => {
+                        onSelect(node.cat.id)
+                        if (hasChildren && !isExpanded) toggleExpand(node.cat.id)
+                    }}
+                    className={`group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-all
+                        ${isSelected
+                            ? 'bg-[#6e00a3]/15 text-[#6e00a3] dark:bg-[#6e00a3]/25 dark:text-[#d9b6fb] ring-1 ring-[#6e00a3]/30'
+                            : 'hover:bg-accent/50 text-foreground'
+                        }`}
+                    style={{ paddingLeft: `${node.depth * 16 + 8}px` }}
+                >
+                    {hasChildren ? (
+                        <motion.span
+                            initial={false}
+                            animate={{ rotate: isExpanded ? 90 : 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="shrink-0 text-muted-foreground"
+                            onClick={(e) => { e.stopPropagation(); toggleExpand(node.cat.id) }}
+                        >
+                            <ChevronRight className="h-3.5 w-3.5" />
+                        </motion.span>
+                    ) : (
+                        <span className="w-3.5 shrink-0" />
+                    )}
+                    <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: color }}
+                    />
+                    <span className="truncate flex-1">{node.cat.name}</span>
+                    <button
+                        type="button"
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-accent transition-opacity"
+                        title="Crear subcarpeta aquí"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            setCreatingUnder(node.cat.id)
+                            setNewCatName('')
+                        }}
+                    >
+                        <FolderPlus className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                </button>
+
+                {/* Inline create form for child */}
+                {creatingUnder === node.cat.id && (
+                    <div className="flex items-center gap-1.5 py-1" style={{ paddingLeft: `${(node.depth + 1) * 16 + 8}px` }}>
+                        <Input
+                            autoFocus
+                            value={newCatName}
+                            onChange={(e) => setNewCatName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleCreate()
+                                if (e.key === 'Escape') setCreatingUnder(false)
+                            }}
+                            placeholder="Nombre..."
+                            className="h-7 text-xs flex-1"
+                        />
+                        <Button type="button" size="sm" className="h-7 px-2" onClick={handleCreate} disabled={!newCatName.trim()}>
+                            <Plus className="h-3 w-3" />
+                        </Button>
+                    </div>
+                )}
+
+                {/* Children */}
+                {isExpanded && node.children.map(child => renderNode(child))}
+            </div>
+        )
+    }
+
+    const breadcrumb = selectedId ? categoryBreadcrumb(selectedId, categories) : []
+
+    return (
+        <div className="space-y-2">
+            {/* Breadcrumb */}
+            {breadcrumb.length > 0 && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground px-1">
+                    {breadcrumb.map((segment, i) => (
+                        <span key={i} className="flex items-center gap-1">
+                            {i > 0 && <ChevronRight className="h-3 w-3" />}
+                            <span className={i === breadcrumb.length - 1 ? 'font-medium text-foreground' : ''}>{segment}</span>
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            {/* Tree */}
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-muted/30 p-1.5 space-y-0.5">
+                {/* Uncategorized option */}
+                <button
+                    type="button"
+                    onClick={() => onSelect('')}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-all
+                        ${selectedId === '' ? 'bg-muted text-foreground ring-1 ring-border' : 'hover:bg-accent/50 text-muted-foreground'}`}
+                >
+                    <span className="w-3.5 shrink-0" />
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400" />
+                    <span className="italic">Sin categoría</span>
+                </button>
+
+                {tree.map(node => renderNode(node))}
+
+                {/* Root-level create */}
+                {creatingUnder === null && (
+                    <div className="flex items-center gap-1.5 py-1 px-2">
+                        <Input
+                            autoFocus
+                            value={newCatName}
+                            onChange={(e) => setNewCatName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleCreate()
+                                if (e.key === 'Escape') setCreatingUnder(false)
+                            }}
+                            placeholder="Nombre..."
+                            className="h-7 text-xs flex-1"
+                        />
+                        <Button type="button" size="sm" className="h-7 px-2" onClick={handleCreate} disabled={!newCatName.trim()}>
+                            <Plus className="h-3 w-3" />
+                        </Button>
+                    </div>
+                )}
+            </div>
+
+            {/* Add root category button */}
+            {creatingUnder === false && (
+                <button
+                    type="button"
+                    onClick={() => { setCreatingUnder(null); setNewCatName('') }}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
+                >
+                    <Plus className="h-3 w-3" />
+                    Nueva categoría
+                </button>
+            )}
+        </div>
+    )
+}
+
+// ─── Main Modal ─────────────────────────────────────────────────────────────
 export function FeatureFormModal({
     open,
     initial,
@@ -40,13 +260,12 @@ export function FeatureFormModal({
     const [form, setForm] = useState<FeatureFormValues>({
         name: '',
         type: 'point',
-        category: '',
-        newCategory: '',
-        subcategory: '',
+        categoryId: '',
         description: '',
         coordinates: '',
     })
     const [errors, setErrors] = useState<Partial<Record<keyof FeatureFormValues, string>>>({})
+    const [localCategories, setLocalCategories] = useState<CategoryDef[]>([])
 
     useEffect(() => {
         if (!open) return
@@ -54,13 +273,12 @@ export function FeatureFormModal({
         setForm({
             name: initial.name ?? '',
             type: initial.type ?? 'point',
-            category: initial.category ?? (categories[0]?.name ?? ''),
-            newCategory: '',
-            subcategory: initial.subcategory ?? '',
+            categoryId: initial.categoryId ?? (categories[0]?.id ?? ''),
             description: initial.description ?? '',
             coordinates: initial.coordinates ?? '',
             _editId: initial._editId,
         })
+        setLocalCategories(categories)
         setErrors({})
     }, [open, initial, categories])
 
@@ -69,25 +287,34 @@ export function FeatureFormModal({
         setErrors((prev) => ({ ...prev, [key]: undefined }))
     }
 
+    function handleCreateCategory(parentId: string | null, name: string) {
+        const parentColor = parentId
+            ? localCategories.find(c => c.id === parentId)?.color
+            : null
+        const newCat: CategoryDef = {
+            id: makeId(),
+            name,
+            color: parentColor || '#40A7F4',
+            parentId,
+            subcategories: [],
+        }
+        setLocalCategories(prev => [...prev, newCat])
+        setForm(prev => ({ ...prev, categoryId: newCat.id }))
+    }
+
     function handleSave() {
-        const parsed = FeatureFormValuesSchema.safeParse(form)
-        if (!parsed.success) {
-            const nextErrors: Partial<Record<keyof FeatureFormValues, string>> = {}
-            for (const issue of parsed.error.issues) {
-                const path = issue.path[0] as keyof FeatureFormValues
-                if (!nextErrors[path]) nextErrors[path] = issue.message
-            }
+        const nextErrors: Partial<Record<keyof FeatureFormValues, string>> = {}
+        if (!form.name.trim()) nextErrors.name = 'El nombre es obligatorio'
+        if (Object.keys(nextErrors).length > 0) {
             setErrors(nextErrors)
             return
         }
 
         onSave({
-            ...parsed.data,
-            category: parsed.data.category === '__new__' ? parsed.data.newCategory.trim() : parsed.data.category,
+            ...form,
+            name: form.name.trim(),
         })
     }
-
-    const isNewCategory = form.category === '__new__'
 
     return (
         <Dialog
@@ -140,39 +367,12 @@ export function FeatureFormModal({
                     </div>
 
                     <div className="space-y-2">
-                        <Label>Categoria</Label>
-                        <Select value={form.category} onValueChange={(value) => setField('category', value)}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Selecciona una categoria" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {categories.map((category) => (
-                                    <SelectItem key={category.id} value={category.name}>
-                                        {category.name}
-                                    </SelectItem>
-                                ))}
-                                <SelectItem value="__new__">+ Nueva categoria...</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        {isNewCategory && (
-                            <div className="space-y-2">
-                                <Input
-                                    value={form.newCategory}
-                                    onChange={(event) => setField('newCategory', event.target.value)}
-                                    placeholder="Nombre de la nueva categoria"
-                                    aria-invalid={Boolean(errors.newCategory)}
-                                />
-                                {errors.newCategory && <p className="text-xs text-red-500">{errors.newCategory}</p>}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label>Subcategoria</Label>
-                        <Input
-                            value={form.subcategory}
-                            onChange={(event) => setField('subcategory', event.target.value)}
-                            placeholder="Opcional"
+                        <Label>Ubicación en carpetas</Label>
+                        <CategoryTreePicker
+                            categories={localCategories}
+                            selectedId={form.categoryId}
+                            onSelect={(id) => setField('categoryId', id)}
+                            onCreateChild={handleCreateCategory}
                         />
                     </div>
 
