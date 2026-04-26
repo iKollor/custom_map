@@ -28,6 +28,7 @@ export type MapClusterLayerProps<
         feature: GeoJSON.Feature<GeoJSON.Point, P>,
         coordinates: [number, number],
     ) => ReactNode;
+    onPointHoverChange?: (isHovered: boolean) => void;
     pointTooltipClassName?: string;
     pieOptions?: {
         enabled?: boolean;

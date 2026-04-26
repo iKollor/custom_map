@@ -10,6 +10,12 @@ import {
     type ChartConfig,
 } from "@workspace/ui/components/chart";
 
+import {
+    Tabs,
+    TabsList,
+    TabsTrigger,
+} from "@workspace/ui/components/tabs";
+
 import { MapPopup } from "../popup";
 import { chartConfigFromSegments, segmentPercent } from "./helpers";
 import type { ClusterPieDetails, ClusterPieSegment } from "./types";
@@ -18,16 +24,28 @@ import type { ClusterPieDetails, ClusterPieSegment } from "./types";
 // Popup helpers
 // ============================================================================
 
-/** Merge case-duplicated segments (e.g. "Formal" + "formal" → "Formal"). */
-function mergeSegmentsByName(segments: ClusterPieSegment[]): ClusterPieSegment[] {
+type GroupingMode = 'root' | 'leaf' | 'full';
+
+/** Merge segments based on the selected grouping mode (root folder, leaf category, or full path). */
+function mergeSegmentsByMode(segments: ClusterPieSegment[], mode: GroupingMode): ClusterPieSegment[] {
     const map = new globalThis.Map<string, ClusterPieSegment>();
     for (const seg of segments) {
-        const key = seg.category.toLowerCase().trim();
+        let keyStr = seg.category.trim();
+        const parts = keyStr.split(' > ');
+        
+        if (mode === 'root') {
+            keyStr = parts[0] ?? keyStr;
+        } else if (mode === 'leaf') {
+            keyStr = parts[parts.length - 1] ?? keyStr;
+        }
+
+        const key = keyStr.toLowerCase();
         const existing = map.get(key);
         if (existing) {
             existing.count += seg.count;
         } else {
-            map.set(key, { ...seg, category: seg.category.trim() });
+            // First segment dictates the color for the merged group.
+            map.set(key, { ...seg, category: keyStr });
         }
     }
     const merged = Array.from(map.values()).sort((a, b) => b.count - a.count);
@@ -69,12 +87,13 @@ export function ClusterPiePopup({
     onClose: () => void;
 }) {
     const [focusedCategory, setFocusedCategory] = useState<string | null>(null);
+    const [groupingMode, setGroupingMode] = useState<GroupingMode>("root");
 
-    // Merge duplicates and collapse tail
+    // Merge duplicates and collapse tail based on grouping mode
     const segments = useMemo(() => {
-        const merged = mergeSegmentsByName(details.segments);
+        const merged = mergeSegmentsByMode(details.segments, groupingMode);
         return collapseOtros(merged);
-    }, [details.segments]);
+    }, [details.segments, groupingMode]);
 
     const total = details.pointCount;
 
@@ -106,6 +125,9 @@ export function ClusterPiePopup({
     const handleLegendClick = (category: string) => {
         setFocusedCategory((prev) => (prev === category ? null : category));
     };
+
+    const hasHierarchy = details.segments.some(seg => seg.category.includes(' > '));
+    const maxSegmentCount = useMemo(() => Math.max(...segments.map(s => s.count), 1), [segments]);
 
     return (
         <MapPopup
@@ -201,10 +223,30 @@ export function ClusterPiePopup({
                 </div>
             </div>
 
+            {/* View Mode Toggle */}
+            {hasHierarchy && (
+                <div className="px-3 pb-2 pt-1">
+                    <Tabs
+                        value={groupingMode}
+                        onValueChange={(v) => {
+                            setGroupingMode(v as GroupingMode);
+                            setFocusedCategory(null);
+                        }}
+                        className="w-full"
+                    >
+                        <TabsList className="grid w-full grid-cols-3 h-7 p-0.5">
+                            <TabsTrigger value="root" className="text-[10px]">Carpeta</TabsTrigger>
+                            <TabsTrigger value="leaf" className="text-[10px]">Específico</TabsTrigger>
+                            <TabsTrigger value="full" className="text-[10px]">Desglose</TabsTrigger>
+                        </TabsList>
+                    </Tabs>
+                </div>
+            )}
+
             {/* Interactive Legend with proportional bars */}
-            <div className="max-h-44 space-y-0.5 overflow-y-auto px-3 pb-3">
+            <div className="max-h-44 space-y-0.5 overflow-y-auto overflow-x-hidden px-3 pb-3">
                 {segments.map((seg) => {
-                    const barWidth = Math.max(6, (seg.count / (segments[0]?.count || 1)) * 100);
+                    const barWidth = Math.max(6, (seg.count / maxSegmentCount) * 100);
                     const isActive = focusedCategory === seg.category;
                     const isDimmed = focusedCategory !== null && !isActive;
 

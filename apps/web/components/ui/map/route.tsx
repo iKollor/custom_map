@@ -213,11 +213,18 @@ function MapPolygon({
                 y: e.originalEvent.clientY,
             });
         };
-        const handleMouseEnter = () => {
+        const handleMouseEnter = (e: MapLibreGL.MapMouseEvent) => {
+            const target = e.originalEvent.target as HTMLElement;
+            if (target && target.tagName !== "CANVAS") return;
             map.getCanvas().style.cursor = "pointer";
             handleMouseEnterEvent();
         };
         const handleMouseMove = (e: MapLibreGL.MapMouseEvent) => {
+            const target = e.originalEvent.target as HTMLElement;
+            if (target && target.tagName !== "CANVAS") {
+                handleMouseLeaveEvent();
+                return;
+            }
             handleMouseMoveEvent([e.lngLat.lng, e.lngLat.lat]);
         };
         const handleMouseLeave = () => {
@@ -362,11 +369,18 @@ function MapRoute({
                 y: e.originalEvent.clientY,
             });
         };
-        const handleMouseEnter = () => {
+        const handleMouseEnter = (e: MapLibreGL.MapMouseEvent) => {
+            const target = e.originalEvent.target as HTMLElement;
+            if (target && target.tagName !== "CANVAS") return;
             map.getCanvas().style.cursor = "pointer";
             handleMouseEnterEvent();
         };
         const handleMouseMove = (e: MapLibreGL.MapMouseEvent) => {
+            const target = e.originalEvent.target as HTMLElement;
+            if (target && target.tagName !== "CANVAS") {
+                handleMouseLeaveEvent();
+                return;
+            }
             handleMouseMoveEvent([e.lngLat.lng, e.lngLat.lat]);
         };
         const handleMouseLeave = () => {

@@ -29,6 +29,7 @@ export function MapClusterLayer<
     onPointClick,
     onClusterClick,
     renderPointTooltip,
+    onPointHoverChange,
     pointTooltipClassName,
     pieOptions,
     coverageOverlayOptions,
@@ -94,6 +95,7 @@ export function MapClusterLayer<
         onClusterClick,
         onPointClick,
         renderPointTooltip,
+        onPointHoverChange,
     });
 
     return (

@@ -1,4 +1,4 @@
-import { categoryColorById, featureCategoryName, isLineCoordinates, isPointCoordinates, type ParsedFeature } from './editor'
+import { categoryColorById, featureCategoryLabel, isLineCoordinates, isPointCoordinates, type ParsedFeature } from './editor'
 import type { MapFeatureCollection, MapFeatureCollectionParams, ResolvedRouteState } from './map-client-types'
 
 // Deduplication of coordinates to remove duplicates within tolerance
@@ -139,7 +139,7 @@ export function buildMapFeatureCollection({ features, categories }: MapFeatureCo
                     properties: {
                         id: feature._id,
                         name: feature.name,
-                        category: featureCategoryName(feature, categories),
+                        category: featureCategoryLabel(feature, categories),
                         description: feature.description,
                         color: categoryColorById(feature.categoryId, categories),
                     },

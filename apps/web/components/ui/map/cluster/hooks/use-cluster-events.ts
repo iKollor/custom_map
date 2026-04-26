@@ -21,13 +21,18 @@ export function useClusterEvents<
         onClusterClick: MapClusterLayerProps<P>["onClusterClick"];
         onPointClick: MapClusterLayerProps<P>["onPointClick"];
         renderPointTooltip: MapClusterLayerProps<P>["renderPointTooltip"];
+        onPointHoverChange?: (isHovered: boolean) => void;
     },
 ) {
     const { map, isLoaded } = useMap();
     const { sourceId, clusterLayerId, clusterHitLayerId, unclusteredLayerId } = ids;
-    const { pieEnabled, onClusterClick, onPointClick, renderPointTooltip } = opts;
+    const { pieEnabled, onClusterClick, onPointClick, renderPointTooltip, onPointHoverChange } = opts;
 
     const [hoveredPoint, setHoveredPoint] = useState<HoveredPointState<P> | null>(null);
+
+    useEffect(() => {
+        onPointHoverChange?.(hoveredPoint !== null);
+    }, [hoveredPoint, onPointHoverChange]);
 
     useEffect(() => {
         if (!isLoaded || !map) return;

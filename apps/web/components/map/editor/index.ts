@@ -20,6 +20,7 @@ export {
     csvRowsToParsed,
     downloadCSV,
     ensureCategoryIntegrity,
+    featureCategoryLabel,
     featureCategoryName,
     getAncestorIds,
     getDescendantIds,

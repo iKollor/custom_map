@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Cell, LabelList, Pie, PieChart } from "recharts";
+import { Cell, Pie, PieChart } from "recharts";
 
 import {
     ChartContainer,
@@ -29,7 +29,8 @@ export function ClusterPieMarkerChart({
 }) {
     const size = radius * 2;
     const outerRadius = Math.max(8, radius - 2);
-    const labelFontSize = Math.max(9, Math.round(radius * 0.32));
+    const innerRadius = Math.max(12, radius * 0.45);
+    const labelFontSize = Math.max(11, Math.round(radius * 0.5));
 
     const chartConfig = useMemo<ChartConfig>(
         () =>
@@ -52,9 +53,22 @@ export function ClusterPieMarkerChart({
 
     return (
         <div
-            className="relative flex items-center justify-center opacity-85"
+            className="relative flex items-center justify-center opacity-95 transition-transform hover:scale-105"
             style={{ width: size, height: size, overflow: "visible" }}
         >
+            {/* Center background circle for the text */}
+            <div 
+                className="absolute rounded-full bg-background shadow-sm"
+                style={{ width: innerRadius * 2 + 1, height: innerRadius * 2 + 1 }}
+            />
+            {/* Center total text */}
+            <span 
+                className="absolute z-10 font-bold text-foreground pointer-events-none tabular-nums tracking-tighter"
+                style={{ fontSize: labelFontSize }}
+            >
+                {total > 999 ? `${(total / 1000).toFixed(1)}k` : total}
+            </span>
+
             <ChartContainer
                 config={chartConfig}
                 className="mx-auto aspect-square h-full w-full overflow-visible [&_.recharts-text]:fill-background [&_.recharts-wrapper]:overflow-visible! [&_.recharts-surface]:overflow-visible"
@@ -84,26 +98,17 @@ export function ClusterPieMarkerChart({
                         data={data}
                         dataKey="value"
                         nameKey="category"
+                        innerRadius={innerRadius}
                         outerRadius={outerRadius}
                         strokeWidth={1.5}
-                        stroke="#ffffff"
-                        fillOpacity={0.85}
+                        stroke="hsl(var(--background))"
+                        fillOpacity={0.9}
+                        paddingAngle={data.length > 1 ? 1 : 0}
                         isAnimationActive={false}
                     >
                         {data.map((entry, index) => (
                             <Cell key={`${entry.category}-${index}`} fill={entry.fill} />
                         ))}
-                        <LabelList
-                            dataKey={showPercent ? "percent" : "value"}
-                            className="fill-background"
-                            stroke="none"
-                            fontSize={labelFontSize}
-                            fontWeight={600}
-                            style={{ pointerEvents: "none" }}
-                            formatter={(value) =>
-                                showPercent ? `${value}%` : `${value}`
-                            }
-                        />
                     </Pie>
                 </PieChart>
             </ChartContainer>
