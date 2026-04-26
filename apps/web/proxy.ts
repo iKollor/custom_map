@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 
 const SESSION_COOKIE = 'map_session'
 
-const PUBLIC_PATHS = ['/login', '/api/auth']
+const PUBLIC_PATHS = ['/login', '/api/auth', '/shared', '/api/shared', '/api/route']
 
 export function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl
