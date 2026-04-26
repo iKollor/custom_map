@@ -44,13 +44,13 @@ export async function generateMetadata({ params }: SharedPageProps): Promise<Met
 
     if (project) {
         return {
-            title: `${project.name} | iKollor Maps`,
+            title: `${project.name} | Minkayni Maps`,
             description: `Vista compartida de ${project.name}`,
         }
     }
 
     return {
-        title: 'Mapa Compartido | iKollor Maps'
+        title: 'Mapa Compartido | Minkayni Maps'
     }
 }
 
