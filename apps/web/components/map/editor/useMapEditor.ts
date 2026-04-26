@@ -1006,11 +1006,49 @@ export function useMapEditor() {
     const handleImportRows = useCallback((rows: CsvRow[]) => {
         updateActiveProject((project) => {
             const { features: newFeatures, categories: newCategories } = csvRowsToParsed(rows, project.categories)
-            const mergedFeatures = [...project.features, ...newFeatures]
             const mergedCategories = mergeCategories(project.categories, newCategories)
+
+            // Build a lookup of existing features by a natural key
+            // (name + type + coordinates) so we can detect duplicates and
+            // update their categoryId instead of creating new entries.
+            const featureKey = (f: { name: string; type: string; coordinates: string }) =>
+                `${f.name.trim().toLowerCase()}::${f.type}::${f.coordinates.trim().toLowerCase()}`
+
+            const existingByKey = new Map<string, string>() // key → _id
+            for (const f of project.features) {
+                existingByKey.set(featureKey(f), f._id)
+            }
+
+            const updatedIds = new Set<string>()
+            const updates = new Map<string, string>() // _id → new categoryId
+
+            const genuinelyNew: typeof newFeatures = []
+
+            for (const incoming of newFeatures) {
+                const key = featureKey(incoming)
+                const existingId = existingByKey.get(key)
+
+                if (existingId && !updatedIds.has(existingId)) {
+                    // Feature already exists — just update its category
+                    updatedIds.add(existingId)
+                    updates.set(existingId, incoming.categoryId)
+                } else {
+                    // Genuinely new feature
+                    genuinelyNew.push(incoming)
+                }
+            }
+
+            // Apply category updates to existing features
+            const updatedExisting = updates.size > 0
+                ? project.features.map((f) => {
+                    const newCatId = updates.get(f._id)
+                    return newCatId !== undefined ? { ...f, categoryId: newCatId } : f
+                })
+                : project.features
+
             return {
                 ...project,
-                features: mergedFeatures,
+                features: [...updatedExisting, ...genuinelyNew],
                 categories: mergedCategories,
             }
         })

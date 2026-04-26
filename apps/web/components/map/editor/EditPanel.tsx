@@ -7,7 +7,7 @@ import {
     X,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react'
 import { Button } from '@workspace/ui/components/button'
 import { Input } from '@workspace/ui/components/input'
 import {
@@ -279,29 +279,14 @@ export function EditPanel({
 
 /**
  * EditPanelShell - Contenedor responsive del modo edición.
- * - Mobile: bottom sheet con altura ~85vh, drag-to-close estilo nativo.
+ * - Mobile: bottom sheet con 3 snap points y drag nativo via touch events.
  * - Desktop: panel flotante a la derecha con animación de entrada.
  */
-function EditPanelShell({ children }: { children: React.ReactNode }) {
+function EditPanelShell({ children }: { children: ReactNode }) {
     const isMobile = useIsMobile()
 
     if (isMobile) {
-        return (
-            <div
-                className="pointer-events-auto fixed inset-x-0 bottom-0 z-30 flex max-h-[85vh] flex-col overflow-hidden rounded-t-2xl border-t border-x border-[#6e00a3]/28 bg-background/98 shadow-[0_-18px_50px_-20px_rgba(110,0,163,0.45)] backdrop-blur-md"
-                style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-            >
-                <motion.div
-                    initial={{ y: '100%' }}
-                    animate={{ y: 0 }}
-                    transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                    className="flex min-h-0 flex-1 flex-col"
-                >
-                    <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-muted-foreground/30" aria-hidden="true" />
-                    {children}
-                </motion.div>
-            </div>
-        )
+        return <MobileBottomSheet>{children}</MobileBottomSheet>
     }
 
     return (
@@ -315,3 +300,86 @@ function EditPanelShell({ children }: { children: React.ReactNode }) {
         </motion.div>
     )
 }
+
+/** Snap heights as fractions of viewport height */
+const SNAP_COLLAPSED = 0.18  // ~18vh – header + tabs visible
+const SNAP_HALF = 0.50       // ~50vh
+const SNAP_FULL = 0.85       // ~85vh
+
+function MobileBottomSheet({ children }: { children: ReactNode }) {
+    const sheetRef = useRef<HTMLDivElement>(null)
+    const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+    const [heightVh, setHeightVh] = useState(SNAP_COLLAPSED)
+    const [isDragging, setIsDragging] = useState(false)
+
+    // Convert vh fraction to px for current viewport
+    const toPx = useCallback((vhFrac: number) => window.innerHeight * vhFrac, [])
+
+    const snapTo = useCallback((targetVh: number) => {
+        setHeightVh(targetVh)
+    }, [])
+
+    const onTouchStart = useCallback((e: React.TouchEvent) => {
+        const touch = e.touches[0]
+        if (!touch) return
+        dragRef.current = { startY: touch.clientY, startH: toPx(heightVh) }
+        setIsDragging(true)
+    }, [heightVh, toPx])
+
+    const onTouchMove = useCallback((e: React.TouchEvent) => {
+        if (!dragRef.current) return
+        const touch = e.touches[0]
+        if (!touch) return
+        e.preventDefault() // prevent page scroll
+        const dy = dragRef.current.startY - touch.clientY  // positive = swipe up
+        const newH = Math.max(
+            toPx(SNAP_COLLAPSED),
+            Math.min(toPx(SNAP_FULL), dragRef.current.startH + dy)
+        )
+        setHeightVh(newH / window.innerHeight)
+    }, [toPx])
+
+    const onTouchEnd = useCallback(() => {
+        setIsDragging(false)
+        if (!dragRef.current) return
+        dragRef.current = null
+
+        // Snap to nearest point
+        const snaps = [SNAP_COLLAPSED, SNAP_HALF, SNAP_FULL] as const
+        let nearest: number = SNAP_COLLAPSED
+        let minDist = Math.abs(heightVh - SNAP_COLLAPSED)
+        for (const s of snaps) {
+            const d = Math.abs(heightVh - s)
+            if (d < minDist) { minDist = d; nearest = s }
+        }
+        snapTo(nearest)
+    }, [heightVh, snapTo])
+
+    return (
+        <div
+            ref={sheetRef}
+            className="pointer-events-auto fixed inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-2xl border-t border-x border-[#6e00a3]/28 bg-background/98 shadow-[0_-18px_50px_-20px_rgba(110,0,163,0.45)] backdrop-blur-md"
+            style={{
+                height: `${heightVh * 100}vh`,
+                paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+                overscrollBehavior: 'contain',
+                transition: isDragging ? 'none' : 'height 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+        >
+            {/* Drag handle – touch-action:none prevents browser scroll */}
+            <div
+                className="flex w-full shrink-0 cursor-grab items-center justify-center py-2.5 active:cursor-grabbing"
+                style={{ touchAction: 'none' }}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+            >
+                <div className="h-1 w-10 rounded-full bg-muted-foreground/30" />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {children}
+            </div>
+        </div>
+    )
+}
+

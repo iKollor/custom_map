@@ -157,7 +157,8 @@ export function EditPanelTree({
 
     const treeRef = useRef<any>(null)
 
-    // Open ancestors & scroll into view when selectedFeatureId changes
+    // Open ancestors & scroll into view (centered) when selectedFeatureId changes
+    const ROW_HEIGHT = 36
     useEffect(() => {
         if (!selectedFeatureId || !treeRef.current) return
         const tree = treeRef.current
@@ -175,19 +176,32 @@ export function EditPanelTree({
             parent = parent.parent
         }
 
-        // react-arborist virtualises the list — the row may not exist in the
-        // DOM until the next render after we opened ancestors. We retry a
-        // few times with increasing delays until scrollTo succeeds.
+        // Scroll the row to the vertical centre of the container.
+        // react-arborist virtualises rows, so we need to wait until the
+        // tree re-renders after opening ancestors before the row exists.
         let attempt = 0
         const maxAttempts = 5
         const tryScroll = () => {
             attempt++
             try {
                 const freshNode = tree.get(selectedFeatureId)
-                if (freshNode) {
+                if (!freshNode) throw new Error('node missing')
+
+                // Find the scroll container: react-arborist renders a
+                // div[role="tree"] > div (the scroll wrapper).
+                const listEl: HTMLElement | null =
+                    (tree.listEl as HTMLElement | undefined) ?? // public in some versions
+                    document.querySelector(`[role="tree"][data-testid]`)?.parentElement ?? null
+
+                if (listEl) {
+                    const rowTop = freshNode.rowIndex * ROW_HEIGHT
+                    const centeredTop = rowTop - (bounds.height / 2) + (ROW_HEIGHT / 2)
+                    listEl.scrollTop = Math.max(0, centeredTop)
+                } else {
+                    // Fallback: use the built-in scrollTo (won't centre)
                     freshNode.scrollTo()
-                    return // success
                 }
+                return
             } catch { /* ignore */ }
             if (attempt < maxAttempts) {
                 timerId = window.setTimeout(tryScroll, 80)
@@ -195,7 +209,7 @@ export function EditPanelTree({
         }
         let timerId = window.setTimeout(tryScroll, 30)
         return () => window.clearTimeout(timerId)
-    }, [selectedFeatureId])
+    }, [selectedFeatureId, bounds.height])
 
     return (
         <EditTreeContext.Provider value={contextValue}>
