@@ -250,6 +250,25 @@ export function migrateV1toV2(raw: unknown): StoredState | null {
 
 // ─── CSV Import/Export ──────────────────────────────────────────────────────
 
+/** Separator used in the `category_path` column to encode nested hierarchies. */
+const PATH_SEP = ' > '
+
+/**
+ * Resolve the full breadcrumb path for a category as a single string.
+ * E.g. "Comercio > Tiendas > Informal"
+ */
+function buildCategoryPath(catId: string, byId: Map<string, CategoryDef>): string {
+    const trail: string[] = []
+    let current = byId.get(catId)
+    let depth = 0
+    while (current && depth < 10) {
+        trail.unshift(current.name)
+        current = current.parentId ? byId.get(current.parentId) : undefined
+        depth++
+    }
+    return trail.join(PATH_SEP)
+}
+
 export function csvRowsToParsed(rows: CsvRow[], existingCategories: CategoryDef[] = []): { features: ParsedFeature[], categories: CategoryDef[] } {
     const categories = [...existingCategories]
 
@@ -276,21 +295,44 @@ export function csvRowsToParsed(rows: CsvRow[], existingCategories: CategoryDef[
         return newCat
     }
 
+    /**
+     * Walk a path like ["Comercio", "Tiendas", "Informal"] and find-or-create
+     * each level, returning the deepest category's ID.
+     */
+    const resolvePathToCategoryId = (segments: string[]): string => {
+        let parentId: string | null = null
+        let lastId = ''
+        for (const seg of segments) {
+            const cat = findOrCreateCat(seg, parentId)
+            parentId = cat.id
+            lastId = cat.id
+        }
+        return lastId
+    }
+
     const features = rows
         .map((r, i) => {
             const rawType = normalizeFeatureType(r['type'], r['coordinates'])
 
             let categoryId = ''
-            const catName = r['category']?.trim()
-            const subName = r['subcategory']?.trim()
 
-            if (catName) {
-                const parentCat = findOrCreateCat(catName, null)
-                categoryId = parentCat.id
+            // Prefer the new `category_path` column (supports N levels).
+            const categoryPath = r['category_path']?.trim()
 
-                if (subName) {
-                    const subCat = findOrCreateCat(subName, parentCat.id)
-                    categoryId = subCat.id
+            if (categoryPath) {
+                const segments = categoryPath.split(PATH_SEP).map(s => s.trim()).filter(Boolean)
+                if (segments.length > 0) {
+                    categoryId = resolvePathToCategoryId(segments)
+                }
+            } else {
+                // Backward compat: old `category` + `subcategory` columns (2 levels max).
+                const catName = r['category']?.trim()
+                const subName = r['subcategory']?.trim()
+
+                if (catName) {
+                    const segments = [catName]
+                    if (subName) segments.push(subName)
+                    categoryId = resolvePathToCategoryId(segments)
                 }
             }
 
@@ -316,6 +358,9 @@ export function csvRowsToParsed(rows: CsvRow[], existingCategories: CategoryDef[
     return { features, categories }
 }
 
+/** Column order used when exporting CSVs. */
+const CSV_COLUMNS = ['name', 'type', 'category_path', 'coordinates', 'description']
+
 export function downloadCSV(features: ParsedFeature[], categories: CategoryDef[], filename: string) {
     const byId = new Map(categories.map(c => [c.id, c]))
 
@@ -327,37 +372,22 @@ export function downloadCSV(features: ParsedFeature[], categories: CategoryDef[]
         row.type = f.type
         row.coordinates = coordsToWKT(f._coords, f.type)
 
-        // Resolve categoryId to human-readable category/subcategory for CSV
-        const cat = byId.get(f.categoryId)
-        if (cat) {
-            if (cat.parentId) {
-                const parent = byId.get(cat.parentId)
-                if (parent) {
-                    row.category = parent.name
-                    row.subcategory = cat.name
-                } else {
-                    row.category = cat.name
-                    row.subcategory = ''
-                }
-            } else {
-                row.category = cat.name
-                row.subcategory = ''
-            }
-        } else {
-            row.category = ''
-            row.subcategory = ''
-        }
+        // Resolve full category hierarchy into a single path column
+        row.category_path = f.categoryId ? buildCategoryPath(f.categoryId, byId) : ''
 
-        // Remove internal fields
+        // Remove internal / legacy fields
         delete row.categoryId
         delete row._id
         delete row._raw
         delete row._coords
+        delete row.category
+        delete row.subcategory
+        delete row.formality
 
         return row
     })
 
-    const csv = Papa.unparse(rows)
+    const csv = Papa.unparse(rows, { columns: CSV_COLUMNS })
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
