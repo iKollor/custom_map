@@ -10,6 +10,7 @@ import {
     Menu,
     Pencil,
     Plus,
+    Share2,
     Trash2,
     Upload,
     User,
@@ -47,13 +48,15 @@ import {
 } from '@/components/animate-ui/components/animate/tooltip'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { ClusterToggle } from '@/components/cluster-toggle'
+import { ShareDialog } from './ShareDialog'
 
 interface ToolbarProps {
     username: string
-    projects: Array<{ id: string; name: string }>
+    projects: Array<{ id: string; name: string; shareToken?: string | null }>
     activeProjectId: string
     onSelectProject: (projectId: string) => void
     onCreateProject: () => void
+    onRenameProject: () => void
     onImportFromProject: (sourceProjectId: string) => void
     onToggleFilters: () => void
     filtersOpen: boolean
@@ -65,21 +68,38 @@ interface ToolbarProps {
     editMode: boolean
     onToggleEdit: () => void
     onDeleteProject?: (projectId: string) => void
+    onGenerateShareToken?: (projectId: string) => void
+    onRevokeShareToken?: (projectId: string) => void
 }
 
 export function Toolbar(props: ToolbarProps) {
+    const [shareDialogOpen, setShareDialogOpen] = useState(false)
+    const activeProject = props.projects.find((p) => p.id === props.activeProjectId)
+
     return (
         <TooltipProvider>
             {/* Desktop toolbar */}
             <div className="pointer-events-none absolute inset-x-0 top-3 z-20 hidden items-start justify-between gap-3 px-3 md:flex">
-                <DesktopLeftGroup {...props} />
+                <DesktopLeftGroup {...props} onOpenShare={() => setShareDialogOpen(true)} />
                 <DesktopRightGroup {...props} />
             </div>
 
             {/* Mobile toolbar */}
             <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2 px-3 pt-[max(env(safe-area-inset-top),0.5rem)] pb-2 md:hidden">
-                <MobileBar {...props} />
+                <MobileBar {...props} onOpenShare={() => setShareDialogOpen(true)} />
             </div>
+
+            {activeProject && props.onGenerateShareToken && props.onRevokeShareToken && (
+                <ShareDialog
+                    open={shareDialogOpen}
+                    onOpenChange={setShareDialogOpen}
+                    projectId={activeProject.id}
+                    projectName={activeProject.name}
+                    shareToken={activeProject.shareToken}
+                    onGenerateToken={props.onGenerateShareToken}
+                    onRevokeToken={props.onRevokeShareToken}
+                />
+            )}
         </TooltipProvider>
     )
 }
@@ -93,6 +113,7 @@ function DesktopLeftGroup({
     activeProjectId,
     onSelectProject,
     onCreateProject,
+    onRenameProject,
     onImportFromProject,
     onToggleFilters,
     filtersOpen,
@@ -101,7 +122,8 @@ function DesktopLeftGroup({
     editMode,
     onToggleEdit,
     onDeleteProject,
-}: ToolbarProps) {
+    onOpenShare,
+}: ToolbarProps & { onOpenShare: () => void }) {
     const sourceProjects = projects.filter((project) => project.id !== activeProjectId)
 
     return (
@@ -137,6 +159,36 @@ function DesktopLeftGroup({
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Nuevo proyecto</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={onRenameProject}
+                        aria-label="Renombrar proyecto"
+                    >
+                        <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>Renombrar proyecto</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={onOpenShare}
+                        aria-label="Compartir proyecto"
+                    >
+                        <Share2 className="h-3.5 w-3.5" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>Compartir proyecto</TooltipContent>
             </Tooltip>
 
             {projects.length > 1 && (
@@ -315,6 +367,7 @@ function MobileBar({
     activeProjectId,
     onSelectProject,
     onCreateProject,
+    onRenameProject,
     onImportFromProject,
     onToggleFilters,
     filtersOpen,
@@ -326,7 +379,8 @@ function MobileBar({
     editMode,
     onToggleEdit,
     onDeleteProject,
-}: ToolbarProps) {
+    onOpenShare,
+}: ToolbarProps & { onOpenShare: () => void }) {
     const [menuOpen, setMenuOpen] = useState(false)
     const sourceProjects = projects.filter((project) => project.id !== activeProjectId)
     const activeProject = projects.find((p) => p.id === activeProjectId)
@@ -376,6 +430,26 @@ function MobileBar({
                             >
                                 <Plus className="h-4 w-4" />
                                 Nuevo proyecto
+                            </Button>
+
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-11 w-full justify-start gap-3"
+                                onClick={closeAnd(onRenameProject)}
+                            >
+                                <Pencil className="h-4 w-4" />
+                                Renombrar proyecto
+                            </Button>
+
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-11 w-full justify-start gap-3"
+                                onClick={closeAnd(onOpenShare)}
+                            >
+                                <Share2 className="h-4 w-4" />
+                                Compartir proyecto
                             </Button>
 
                             {projects.length > 1 && (

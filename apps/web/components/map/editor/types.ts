@@ -105,6 +105,7 @@ export const MapProjectSchema = z.object({
     name: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    shareToken: z.string().nullish(),
     categories: z.array(CategoryDefSchema),
     features: z.array(ParsedFeatureSchema),
 })
@@ -116,6 +117,7 @@ export const LegacyMapProjectSchema = z.object({
     name: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    shareToken: z.string().nullish(),
     categories: z.array(CategoryDefSchema),
     features: z.array(LegacyParsedFeatureSchema),
 })

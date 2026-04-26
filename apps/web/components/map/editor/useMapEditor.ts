@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Papa from 'papaparse'
 import { PALETTE } from './constants'
 import {
+    buildCategoryIndex,
     coordsToWKT,
     csvRowsToParsed,
     downloadCSV,
     ensureCategoryIntegrity,
+    getAncestorIds,
+    getDescendantIds,
     makeId,
     migrateV1toV2,
     normalizeFeatureType,
@@ -33,6 +36,7 @@ function createProject(name: string): MapProject {
         name,
         createdAt: now,
         updatedAt: now,
+        shareToken: null,
         categories: [],
         features: [],
     }
@@ -493,7 +497,16 @@ export function useMapEditor() {
 
     useEffect(() => {
         const nextTypes = new Set(features.map((feature) => feature.type))
-        const nextCategories = new Set(features.map((feature) => feature.categoryId))
+        const nextCategories = new Set<string>()
+        const index = buildCategoryIndex(categories)
+
+        for (const feature of features) {
+            if (!feature.categoryId) continue
+            nextCategories.add(feature.categoryId)
+            for (const ancestorId of getAncestorIds(feature.categoryId, index)) {
+                nextCategories.add(ancestorId)
+            }
+        }
 
         setActiveTypes(nextTypes)
         setActiveCategories(nextCategories)
@@ -854,6 +867,18 @@ export function useMapEditor() {
         })
     }, [projects])
 
+    const handleRenameProject = useCallback((projectId: string, name: string) => {
+        const trimmed = name.trim()
+        if (!trimmed) return
+        setProjects((prev) =>
+            prev.map((p) =>
+                p.id === projectId
+                    ? { ...p, name: trimmed, updatedAt: new Date().toISOString() }
+                    : p,
+            ),
+        )
+    }, [])
+
     const handleRenameCategory = useCallback((id: string, name: string) => {
         const trimmed = name.trim()
         if (!trimmed) return
@@ -1071,10 +1096,21 @@ export function useMapEditor() {
     const toggleCategory = useCallback((category: string) => {
         setActiveCategories((prev) => {
             const next = new Set(prev)
-            next.has(category) ? next.delete(category) : next.add(category)
+            const index = buildCategoryIndex(categories)
+            const toToggle = [category, ...getDescendantIds(category, index)]
+            const isAdding = !next.has(category)
+
+            for (const id of toToggle) {
+                if (isAdding) {
+                    next.add(id)
+                } else {
+                    next.delete(id)
+                }
+            }
+
             return next
         })
-    }, [])
+    }, [categories])
 
     const toggleForcedTooltipType = useCallback((type: string) => {
         setForcedTooltipTypes((prev) => {
@@ -1090,6 +1126,32 @@ export function useMapEditor() {
             next.has(category) ? next.delete(category) : next.add(category)
             return next
         })
+    }, [])
+
+    const handleGenerateShareToken = useCallback((projectId: string) => {
+        setProjects((prev) =>
+            prev.map((project) => {
+                if (project.id !== projectId) return project
+                return {
+                    ...project,
+                    shareToken: crypto.randomUUID(),
+                    updatedAt: new Date().toISOString(),
+                }
+            })
+        )
+    }, [])
+
+    const handleRevokeShareToken = useCallback((projectId: string) => {
+        setProjects((prev) =>
+            prev.map((project) => {
+                if (project.id !== projectId) return project
+                return {
+                    ...project,
+                    shareToken: null,
+                    updatedAt: new Date().toISOString(),
+                }
+            })
+        )
     }, [])
 
     const handleToggleEdit = useCallback(() => {
@@ -1112,7 +1174,7 @@ export function useMapEditor() {
     )
 
     const projectOptions = useMemo(
-        () => projects.map((project) => ({ id: project.id, name: project.name })),
+        () => projects.map((project) => ({ id: project.id, name: project.name, shareToken: project.shareToken })),
         [projects],
     )
 
@@ -1160,6 +1222,9 @@ export function useMapEditor() {
         handleReorderCategory,
         handleDeleteCategory,
         handleDeleteProject,
+        handleRenameProject,
+        handleGenerateShareToken,
+        handleRevokeShareToken,
         handleImportRows,
         handleExport,
         toggleType,

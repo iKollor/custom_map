@@ -19,6 +19,7 @@ type FeatureInfoPanelProps = {
     onEditAction: (feature: ParsedFeature) => void
     onDeleteAction: (id: string) => void
     onUpdateCustomFieldsAction: (id: string, customFields: Record<string, string>) => void
+    readOnly?: boolean
 }
 
 const TYPE_LABELS = { point: 'Punto', route: 'Ruta', section: 'Sector' } as const
@@ -108,6 +109,7 @@ function PanelContent({
     onEditAction,
     onDeleteAction,
     onUpdateCustomFieldsAction,
+    readOnly,
 }: {
     feature: ParsedFeature
     categories: CategoryDef[]
@@ -115,6 +117,7 @@ function PanelContent({
     onEditAction: (f: ParsedFeature) => void
     onDeleteAction: (id: string) => void
     onUpdateCustomFieldsAction: (id: string, fields: Record<string, string>) => void
+    readOnly?: boolean
 }) {
     const [addingField, setAddingField] = useState(false)
     const [newKey, setNewKey] = useState('')
@@ -217,44 +220,50 @@ function PanelContent({
 
                 {/* Quick actions */}
                 <div className="mt-2 flex gap-1.5">
+                    {!readOnly && (
+                        <>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 flex-1 text-xs"
+                                onClick={() => onEditAction(feature)}
+                            >
+                                <Edit2 className="mr-1 size-3" />
+                                Editar
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10"
+                                onClick={() => {
+                                    onDeleteAction(feature._id)
+                                    onCloseAction()
+                                }}
+                                title="Eliminar"
+                            >
+                                <Trash2 className="size-3" />
+                            </Button>
+                        </>
+                    )}
                     <Button
                         size="sm"
                         variant="outline"
-                        className="h-7 flex-1 text-xs"
-                        onClick={() => onEditAction(feature)}
-                    >
-                        <Edit2 className="mr-1 size-3" />
-                        Editar
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10"
-                        onClick={() => {
-                            onDeleteAction(feature._id)
-                            onCloseAction()
-                        }}
-                        title="Eliminar"
-                    >
-                        <Trash2 className="size-3" />
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs"
+                        className={cn("h-7 px-2 text-xs", readOnly && "flex-1")}
                         onClick={copyCoordinates}
                         title="Copiar coordenadas"
                     >
                         <Copy className="size-3" />
+                        {readOnly && <span className="ml-1">Copiar coord.</span>}
                     </Button>
                     <Button
                         size="sm"
                         variant="outline"
-                        className="h-7 px-2 text-xs"
+                        className={cn("h-7 px-2 text-xs", readOnly && "flex-1")}
                         onClick={openInMaps}
                         title="Abrir en Google Maps"
                     >
                         <ExternalLink className="size-3" />
+                        {readOnly && <span className="ml-1">Abrir en Maps</span>}
                     </Button>
                 </div>
             </div>
@@ -288,18 +297,20 @@ function PanelContent({
                 <section>
                     <div className="flex items-center justify-between">
                         <SectionTitle>Campos personalizados</SectionTitle>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setAddingField(true)
-                                setNewKey('')
-                                setNewValue('')
-                            }}
-                            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                            <Plus className="size-3" />
-                            Agregar
-                        </button>
+                        {!readOnly && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setAddingField(true)
+                                    setNewKey('')
+                                    setNewValue('')
+                                }}
+                                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                            >
+                                <Plus className="size-3" />
+                                Agregar
+                            </button>
+                        )}
                     </div>
 
                     {Object.keys(customFields).length === 0 && !addingField && (
@@ -335,25 +346,29 @@ function PanelContent({
                                         </div>
                                     ) : (
                                         <p
-                                            className="cursor-pointer text-xs text-foreground hover:underline"
+                                            className={cn("text-xs text-foreground", !readOnly && "cursor-pointer hover:underline")}
                                             onClick={() => {
-                                                setEditingKey(key)
-                                                setEditingValue(value)
+                                                if (!readOnly) {
+                                                    setEditingKey(key)
+                                                    setEditingValue(value)
+                                                }
                                             }}
-                                            title="Clic para editar"
+                                            title={!readOnly ? "Clic para editar" : undefined}
                                         >
                                             {value || '—'}
                                         </p>
                                     )}
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => handleDeleteField(key)}
-                                    className="mt-4 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                                    aria-label={`Eliminar campo ${key}`}
-                                >
-                                    <X className="size-3" />
-                                </button>
+                                {!readOnly && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDeleteField(key)}
+                                        className="mt-4 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                                        aria-label={`Eliminar campo ${key}`}
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -410,6 +425,7 @@ export function FeatureInfoPanel({
     onEditAction,
     onDeleteAction,
     onUpdateCustomFieldsAction,
+    readOnly = false,
 }: FeatureInfoPanelProps) {
     const feature = featureId ? (features.find((f) => f._id === featureId) ?? null) : null
     const isMobile = useIsMobile()
@@ -475,6 +491,7 @@ export function FeatureInfoPanel({
                             onEditAction={onEditAction}
                             onDeleteAction={onDeleteAction}
                             onUpdateCustomFieldsAction={onUpdateCustomFieldsAction}
+                            readOnly={readOnly}
                         />
                     </motion.div>
                 </>

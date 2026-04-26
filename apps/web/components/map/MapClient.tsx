@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@workspace/ui/components/button'
 import {
@@ -56,6 +56,22 @@ import { useMapClientController } from './useMapClientController'
  */
 export default function MapClient({ username }: { username: string }) {
     const { editor, projectDialog, selection, derived, mapConfig, actions } = useMapClientController()
+
+    // ── Rename project dialog ──────────────────────────────────────────────
+    const [renameOpen, setRenameOpen] = useState(false)
+    const [renameName, setRenameName] = useState('')
+
+    const openRenameDialog = () => {
+        setRenameName(editor.activeProject?.name ?? '')
+        setRenameOpen(true)
+    }
+
+    const submitRename = () => {
+        if (!editor.activeProject || !renameName.trim()) return
+        editor.handleRenameProject(editor.activeProject.id, renameName)
+        setRenameOpen(false)
+    }
+
     const contextMenuFeature = selection.contextMenuState
         ? (editor.features.find((feature) => feature._id === selection.contextMenuState?.featureId) ?? null)
         : null
@@ -103,6 +119,7 @@ export default function MapClient({ username }: { username: string }) {
                 activeProjectId={editor.activeProject?.id ?? ''}
                 onSelectProject={editor.selectProject}
                 onCreateProject={() => projectDialog.setOpen(true)}
+                onRenameProject={openRenameDialog}
                 onImportFromProject={editor.importFromProject}
                 filtersOpen={editor.filtersOpen}
                 onToggleFilters={() => editor.setFiltersOpen((open) => !open)}
@@ -114,6 +131,8 @@ export default function MapClient({ username }: { username: string }) {
                 editMode={editor.editMode}
                 onToggleEdit={editor.handleToggleEdit}
                 onDeleteProject={editor.handleDeleteProject}
+                onGenerateShareToken={editor.handleGenerateShareToken}
+                onRevokeShareToken={editor.handleRevokeShareToken}
             />
 
             <FilterPanel
@@ -311,6 +330,48 @@ export default function MapClient({ username }: { username: string }) {
                         </Button>
                         <Button type="button" onClick={projectDialog.submit} disabled={!projectDialog.name.trim()}>
                             Crear proyecto
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── Rename project dialog ───────────────────────────── */}
+            <Dialog
+                open={renameOpen}
+                onOpenChange={(nextOpen) => {
+                    setRenameOpen(nextOpen)
+                    if (!nextOpen) setRenameName('')
+                }}
+            >
+                <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md sm:w-full" showCloseButton={false}>
+                    <DialogHeader>
+                        <DialogTitle>Renombrar proyecto</DialogTitle>
+                        <DialogDescription>
+                            Cambia el nombre del proyecto activo.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-2">
+                        <Input
+                            value={renameName}
+                            onChange={(event) => setRenameName(event.target.value)}
+                            placeholder="Nuevo nombre del proyecto"
+                            autoFocus
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    event.preventDefault()
+                                    submitRename()
+                                }
+                            }}
+                        />
+                    </div>
+
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
+                            Cancelar
+                        </Button>
+                        <Button type="button" onClick={submitRename} disabled={!renameName.trim()}>
+                            Guardar
                         </Button>
                     </DialogFooter>
                 </DialogContent>

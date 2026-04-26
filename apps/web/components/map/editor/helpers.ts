@@ -28,6 +28,123 @@ export function makeId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+// ─── Category tree utilities ────────────────────────────────────────────────
+//
+// These helpers centralise all hierarchical category logic so consumers
+// (FilterPanel, EditPanelTree, useMapEditor) share a single, efficient
+// implementation instead of each re-building Maps/trees independently.
+
+/** Flat item produced by traversing the category tree in display order. */
+export interface CategoryTreeItem {
+    cat: CategoryDef
+    depth: number
+    /** Total features in this category and all its descendants. */
+    count: number
+}
+
+/**
+ * Build a lookup index from a categories array.
+ * Call this once per render cycle and pass the result to helpers that need it.
+ */
+export function buildCategoryIndex(categories: CategoryDef[]) {
+    const byId = new Map<string, CategoryDef>(categories.map(c => [c.id, c]))
+    const childrenOf = new Map<string, CategoryDef[]>()
+
+    for (const cat of categories) {
+        const parentKey = cat.parentId || '__root__'
+        const siblings = childrenOf.get(parentKey)
+        if (siblings) {
+            siblings.push(cat)
+        } else {
+            childrenOf.set(parentKey, [cat])
+        }
+    }
+
+    return { byId, childrenOf } as const
+}
+
+export type CategoryIndex = ReturnType<typeof buildCategoryIndex>
+
+/** Get all descendant category IDs (children, grandchildren, …). */
+export function getDescendantIds(id: string, index: CategoryIndex): string[] {
+    const result: string[] = []
+    const stack = index.childrenOf.get(id)?.slice() ?? []
+    while (stack.length > 0) {
+        const child = stack.pop()!
+        result.push(child.id)
+        const grandchildren = index.childrenOf.get(child.id)
+        if (grandchildren) stack.push(...grandchildren)
+    }
+    return result
+}
+
+/** Walk up from a category to the root, collecting all ancestor IDs. */
+export function getAncestorIds(id: string, index: CategoryIndex): string[] {
+    const result: string[] = []
+    let current = index.byId.get(id)
+    let depth = 0
+    while (current?.parentId && depth < 10) {
+        result.push(current.parentId)
+        current = index.byId.get(current.parentId)
+        depth++
+    }
+    return result
+}
+
+/**
+ * Recursively count features belonging to a category and all its descendants.
+ * Uses a pre-built count-by-category map to avoid repeated array scans.
+ */
+function countRecursive(
+    catId: string,
+    directCounts: Map<string, number>,
+    index: CategoryIndex,
+): number {
+    let total = directCounts.get(catId) ?? 0
+    const children = index.childrenOf.get(catId)
+    if (children) {
+        for (const child of children) {
+            total += countRecursive(child.id, directCounts, index)
+        }
+    }
+    return total
+}
+
+/**
+ * Flatten the category hierarchy into display-order items with depth and
+ * recursive feature count. Used by FilterPanel to render indented rows.
+ */
+export function buildCategoryTree(
+    categories: CategoryDef[],
+    features: ParsedFeature[],
+): CategoryTreeItem[] {
+    const index = buildCategoryIndex(categories)
+
+    // O(n) direct count map
+    const directCounts = new Map<string, number>()
+    for (const f of features) {
+        directCounts.set(f.categoryId, (directCounts.get(f.categoryId) ?? 0) + 1)
+    }
+
+    const result: CategoryTreeItem[] = []
+
+    const traverse = (parentKey: string, depth: number) => {
+        const children = index.childrenOf.get(parentKey)
+        if (!children) return
+        for (const child of children) {
+            result.push({
+                cat: child,
+                depth,
+                count: countRecursive(child.id, directCounts, index),
+            })
+            traverse(child.id, depth + 1)
+        }
+    }
+
+    traverse('__root__', 0)
+    return result
+}
+
 // ─── Category resolution helpers ────────────────────────────────────────────
 
 /** Resolve a category by its ID. */

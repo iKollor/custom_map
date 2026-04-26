@@ -4,6 +4,7 @@ export { FeatureFormModal } from './FeatureFormModal'
 export { FilterPanel } from './FilterPanel'
 export { ImportModal } from './ImportModal'
 export { MapDrawLayer } from './MapDrawLayer'
+export { ShareDialog } from './ShareDialog'
 export { Toolbar } from './Toolbar'
 
 // Centralized Constants & Theme
@@ -11,6 +12,8 @@ export { CONTEXT_MENU_LABELS, FEATURE_TYPES, PALETTE, THEME_COLORS, TYPE_ICONS, 
 
 // Utilities & Helpers
 export {
+    buildCategoryIndex,
+    buildCategoryTree,
     categoryBreadcrumb,
     categoryColorById,
     coordsToWKT,
@@ -18,6 +21,8 @@ export {
     downloadCSV,
     ensureCategoryIntegrity,
     featureCategoryName,
+    getAncestorIds,
+    getDescendantIds,
     isLineCoordinates,
     isPointCoordinates,
     makeId,
@@ -25,6 +30,8 @@ export {
     normalizeFeatureType,
     parseCoordinates,
 } from './helpers'
+
+export type { CategoryIndex, CategoryTreeItem } from './helpers'
 
 // Main Hook
 export { useMapEditor } from './useMapEditor'
