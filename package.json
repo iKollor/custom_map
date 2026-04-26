@@ -10,8 +10,10 @@
     "typecheck": "turbo typecheck"
   },
   "devDependencies": {
+    "@types/papaparse": "^5",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
+    "papaparse": "^5.5.3",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "shadcn": "^4.4.0",

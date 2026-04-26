@@ -39,6 +39,7 @@ async function withProjectsLock<T>(fn: () => Promise<T>): Promise<T> {
 
 const BaselineMetaSchema = z.object({
     updatedAt: z.string().nullable().optional(),
+    projectIds: z.array(z.string()).optional(),
     projects: z.array(
         z.object({
             id: z.string(),

@@ -657,7 +657,7 @@ export function useMapEditor() {
         setPendingPoints([])
     }, [])
 
-    const handleFormSave = useCallback((values: FeatureFormValues) => {
+    const handleFormSave = useCallback((values: FeatureFormValues, localCategories?: CategoryDef[]) => {
         const type = normalizeFeatureType(values.type, values.coordinates)
         const coords = parseCoordinates(values.coordinates, type)
 
@@ -691,7 +691,8 @@ export function useMapEditor() {
                 nextFeatures = [...nextFeatures, newFeature]
             }
 
-            const nextCategories = ensureCategoryIntegrity(nextFeatures, project.categories)
+            const mergedCategories = localCategories ? mergeCategories(project.categories, localCategories) : project.categories
+            const nextCategories = ensureCategoryIntegrity(nextFeatures, mergedCategories)
 
             return {
                 ...project,

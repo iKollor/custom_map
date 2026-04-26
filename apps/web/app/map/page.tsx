@@ -2,7 +2,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 import { SESSION_COOKIE, isValidSessionValue, getConfiguredUsername } from '@/lib/auth'
-import MapClient from '@/components/map/MapClient'
+import MapClientLoader from '@/components/map/MapClientLoader'
 
 export const metadata: Metadata = {
     title: 'Mapa — Plataforma de Datos Geoespaciales',
@@ -19,5 +19,5 @@ export default async function MapPage() {
 
     const username = getConfiguredUsername()
 
-    return <MapClient username={username} />
+    return <MapClientLoader username={username} />
 }

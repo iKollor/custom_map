@@ -1,5 +1,5 @@
 import { CheckCheck, ChevronRight, Edit2, FolderPlus, Plus } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { motion } from 'motion/react'
 import { Button } from '@workspace/ui/components/button'
 import {
@@ -21,7 +21,7 @@ interface FeatureFormModalProps {
     open: boolean
     initial: Partial<FeatureFormValues>
     categories: CategoryDef[]
-    onSave: (values: FeatureFormValues) => void
+    onSave: (values: FeatureFormValues, categories?: CategoryDef[]) => void
     onCancel: () => void
 }
 
@@ -60,16 +60,22 @@ function CategoryTreePicker({
     selectedId,
     onSelect,
     onCreateChild,
+    creatingUnder,
+    setCreatingUnder,
+    newCatName,
+    setNewCatName,
 }: {
     categories: CategoryDef[]
     selectedId: string
     onSelect: (id: string) => void
     onCreateChild: (parentId: string | null, name: string) => void
+    creatingUnder: string | null | false
+    setCreatingUnder: (val: string | null | false) => void
+    newCatName: string
+    setNewCatName: (val: string) => void
 }) {
     const tree = useMemo(() => buildCategoryTree(categories), [categories])
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
-    const [creatingUnder, setCreatingUnder] = useState<string | null | false>(false)
-    const [newCatName, setNewCatName] = useState('')
 
     // Auto-expand ancestors of selected category
     useEffect(() => {
@@ -98,8 +104,7 @@ function CategoryTreePicker({
         const trimmed = newCatName.trim()
         if (!trimmed || creatingUnder === false) return
         onCreateChild(creatingUnder, trimmed)
-        setNewCatName('')
-        setCreatingUnder(false)
+        // onCreateChild will clear the text and creatingUnder state
     }
 
     function renderNode(node: CatTreeNode) {
@@ -110,13 +115,21 @@ function CategoryTreePicker({
 
         return (
             <div key={node.cat.id}>
-                <button
-                    type="button"
+                <div
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            onSelect(node.cat.id)
+                            if (hasChildren && !isExpanded) toggleExpand(node.cat.id)
+                        }
+                    }}
                     onClick={() => {
                         onSelect(node.cat.id)
                         if (hasChildren && !isExpanded) toggleExpand(node.cat.id)
                     }}
-                    className={`group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-all
+                    className={`group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-all cursor-pointer
                         ${isSelected
                             ? 'bg-[#6e00a3]/15 text-[#6e00a3] dark:bg-[#6e00a3]/25 dark:text-[#d9b6fb] ring-1 ring-[#6e00a3]/30'
                             : 'hover:bg-accent/50 text-foreground'
@@ -128,8 +141,8 @@ function CategoryTreePicker({
                             initial={false}
                             animate={{ rotate: isExpanded ? 90 : 0 }}
                             transition={{ duration: 0.15 }}
-                            className="shrink-0 text-muted-foreground"
-                            onClick={(e) => { e.stopPropagation(); toggleExpand(node.cat.id) }}
+                            className="shrink-0 text-muted-foreground cursor-pointer"
+                            onClick={(e: React.MouseEvent) => { e.stopPropagation(); toggleExpand(node.cat.id) }}
                         >
                             <ChevronRight className="h-3.5 w-3.5" />
                         </motion.span>
@@ -143,7 +156,7 @@ function CategoryTreePicker({
                     <span className="truncate flex-1">{node.cat.name}</span>
                     <button
                         type="button"
-                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-accent transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-accent transition-opacity cursor-pointer"
                         title="Crear subcarpeta aquí"
                         onClick={(e) => {
                             e.stopPropagation()
@@ -153,7 +166,7 @@ function CategoryTreePicker({
                     >
                         <FolderPlus className="h-3 w-3 text-muted-foreground" />
                     </button>
-                </button>
+                </div>
 
                 {/* Inline create form for child */}
                 {creatingUnder === node.cat.id && (
@@ -163,8 +176,15 @@ function CategoryTreePicker({
                             value={newCatName}
                             onChange={(e) => setNewCatName(e.target.value)}
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleCreate()
-                                if (e.key === 'Escape') setCreatingUnder(false)
+                                if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    handleCreate()
+                                }
+                                if (e.key === 'Escape') {
+                                    e.preventDefault()
+                                    setCreatingUnder(false)
+                                    setNewCatName('')
+                                }
                             }}
                             placeholder="Nombre..."
                             className="h-7 text-xs flex-1"
@@ -266,20 +286,28 @@ export function FeatureFormModal({
     })
     const [errors, setErrors] = useState<Partial<Record<keyof FeatureFormValues, string>>>({})
     const [localCategories, setLocalCategories] = useState<CategoryDef[]>([])
+    
+    // Lift category creation state so we can flush it on save
+    const [creatingUnder, setCreatingUnder] = useState<string | null | false>(false)
+    const [newCatName, setNewCatName] = useState('')
 
+    const prevOpen = useRef(false)
+    
     useEffect(() => {
-        if (!open) return
-
-        setForm({
-            name: initial.name ?? '',
-            type: initial.type ?? 'point',
-            categoryId: initial.categoryId ?? (categories[0]?.id ?? ''),
-            description: initial.description ?? '',
-            coordinates: initial.coordinates ?? '',
-            _editId: initial._editId,
-        })
-        setLocalCategories(categories)
-        setErrors({})
+        // Only initialize form state when the modal transitions from closed to open
+        if (open && !prevOpen.current) {
+            setForm({
+                name: initial.name ?? '',
+                type: initial.type ?? 'point',
+                categoryId: initial.categoryId ?? (categories[0]?.id ?? ''),
+                description: initial.description ?? '',
+                coordinates: initial.coordinates ?? '',
+                _editId: initial._editId,
+            })
+            setLocalCategories(categories)
+            setErrors({})
+        }
+        prevOpen.current = open
     }, [open, initial, categories])
 
     function setField(key: keyof FeatureFormValues, value: string) {
@@ -300,6 +328,8 @@ export function FeatureFormModal({
         }
         setLocalCategories(prev => [...prev, newCat])
         setForm(prev => ({ ...prev, categoryId: newCat.id }))
+        setCreatingUnder(false)
+        setNewCatName('')
     }
 
     function handleSave() {
@@ -310,10 +340,36 @@ export function FeatureFormModal({
             return
         }
 
+        let finalCategoryId = form.categoryId
+        let finalLocalCategories = [...localCategories]
+
+        // If the user was in the middle of creating a category when they clicked save,
+        // automatically create it and assign it.
+        if (creatingUnder !== false && newCatName.trim()) {
+            const parentColor = creatingUnder
+                ? finalLocalCategories.find(c => c.id === creatingUnder)?.color
+                : null
+            const newCat: CategoryDef = {
+                id: makeId(),
+                name: newCatName.trim(),
+                color: parentColor || '#40A7F4',
+                parentId: creatingUnder,
+                subcategories: [],
+            }
+            finalLocalCategories.push(newCat)
+            finalCategoryId = newCat.id
+            setLocalCategories(finalLocalCategories)
+        }
+
         onSave({
             ...form,
             name: form.name.trim(),
-        })
+            categoryId: finalCategoryId,
+        }, finalLocalCategories)
+        
+        // Reset states
+        setCreatingUnder(false)
+        setNewCatName('')
     }
 
     return (
@@ -373,6 +429,10 @@ export function FeatureFormModal({
                             selectedId={form.categoryId}
                             onSelect={(id) => setField('categoryId', id)}
                             onCreateChild={handleCreateCategory}
+                            creatingUnder={creatingUnder}
+                            setCreatingUnder={setCreatingUnder}
+                            newCatName={newCatName}
+                            setNewCatName={setNewCatName}
                         />
                     </div>
 

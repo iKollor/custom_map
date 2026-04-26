@@ -27,25 +27,49 @@ type FeatureTooltipProps = {
 }
 
 function FeatureTooltip({ feature, coordinates, categories }: FeatureTooltipProps) {
-    const { address, loading } = useReverseGeocode(coordinates[0], coordinates[1], feature.type === 'point')
+    const [isVisible, setIsVisible] = useState(false)
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (!containerRef.current) return
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry && entry.isIntersecting) {
+                    setIsVisible(true)
+                    observer.disconnect()
+                }
+            },
+            { threshold: 0.1 }
+        )
+        observer.observe(containerRef.current)
+        return () => observer.disconnect()
+    }, [])
+
+    const { address, loading } = useReverseGeocode(
+        coordinates[0],
+        coordinates[1],
+        isVisible && feature.type === 'point'
+    )
     const swatchColor = categoryColorById(feature.categoryId, categories)
-    const locationText = feature.type === 'point'
-        ? loading
-            ? 'Buscando dirección…'
-            : (address ?? 'Dirección no disponible')
-        : `${coordinates[1].toFixed(5)}, ${coordinates[0].toFixed(5)}`
+
+    let locationContent: React.ReactNode = `${coordinates[1].toFixed(5)}, ${coordinates[0].toFixed(5)}`
+    if (feature.type === 'point') {
+        if (loading || !isVisible) {
+            locationContent = <span className="animate-pulse text-muted-foreground">Buscando dirección...</span>
+        } else {
+            locationContent = address ?? 'Dirección no disponible'
+        }
+    }
 
     return (
-        <div className="min-w-44 max-w-64 space-y-2 text-left">
+        <div ref={containerRef} className="pointer-events-auto min-w-44 max-w-64 space-y-2 text-left">
             <div className="flex items-center gap-2">
                 <span
                     aria-hidden
                     className="inline-block size-2 shrink-0 rounded-full ring-2 ring-background"
                     style={{ backgroundColor: swatchColor }}
                 />
-                <p className="truncate text-[13px] font-semibold leading-tight">
-                    {feature.name}
-                </p>
+                <p className="truncate text-[13px] font-semibold leading-tight">{feature.name}</p>
             </div>
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 {featureCategoryName(feature, categories) || 'Sin categoría'}
@@ -53,7 +77,7 @@ function FeatureTooltip({ feature, coordinates, categories }: FeatureTooltipProp
             <div className="grid grid-cols-1 gap-2 rounded-md border border-border/60 bg-background/60 p-2">
                 <div>
                     <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Ubicación</p>
-                    <p className="text-xs font-semibold text-foreground">{locationText}</p>
+                    <p className="text-xs font-semibold text-foreground">{locationContent}</p>
                 </div>
             </div>
         </div>
@@ -894,13 +918,23 @@ export function MapFeatureLayers({
             {/* Line endpoint markers (editing mode) */}
             {editMode &&
                 sortedLinearFeatures.flatMap((feature) => {
-                    if (feature.type === 'section') return []
+                    const isSelected = activeSelectedRouteId === feature._id
+                    if (feature.type === 'section' && !isSelected) return []
+
                     const sourceCoordinates = feature._coords
                     if (!Array.isArray(sourceCoordinates) || !Array.isArray(sourceCoordinates[0])) return []
                     const lineCoordinates = sourceCoordinates as [number, number][]
 
                     return lineCoordinates.map((point, index) => {
-                        const isEndpoint = index === 0 || index === lineCoordinates.length - 1
+                        // For closed sections, skip rendering a duplicate marker for the last point
+                        if (feature.type === 'section' && index === lineCoordinates.length - 1 && lineCoordinates.length >= 4) {
+                            const firstPoint = lineCoordinates[0];
+                            if (firstPoint && firstPoint[0] === point[0] && firstPoint[1] === point[1]) {
+                                return null;
+                            }
+                        }
+
+                        const isEndpoint = feature.type === 'route' ? (index === 0 || index === lineCoordinates.length - 1) : false
                         const isSelected = activeSelectedRouteId === feature._id
 
                         return (
@@ -923,9 +957,18 @@ export function MapFeatureLayers({
                                     })
                                 }}
                                 onDragEnd={({ lng: nextLng, lat: nextLat }) => {
-                                    const nextCoordinates = lineCoordinates.map((coord, coordIndex) =>
-                                        coordIndex === index ? ([nextLng, nextLat] as [number, number]) : coord,
-                                    )
+                                    const isSection = feature.type === 'section'
+                                    const isClosed = isSection && lineCoordinates.length >= 4 &&
+                                        lineCoordinates[0]?.[0] === lineCoordinates[lineCoordinates.length - 1]?.[0] &&
+                                        lineCoordinates[0]?.[1] === lineCoordinates[lineCoordinates.length - 1]?.[1]
+
+                                    const nextCoordinates = lineCoordinates.map((coord, coordIndex) => {
+                                        if (isClosed) {
+                                            if (index === 0 && coordIndex === lineCoordinates.length - 1) return [nextLng, nextLat] as [number, number]
+                                            if (index === lineCoordinates.length - 1 && coordIndex === 0) return [nextLng, nextLat] as [number, number]
+                                        }
+                                        return coordIndex === index ? ([nextLng, nextLat] as [number, number]) : coord
+                                    })
                                     onUpdateFeatureCoordinatesAction(feature._id, nextCoordinates)
                                     onSelectRouteAction(feature._id)
                                     onOpenFeatureInfoAction(feature._id)

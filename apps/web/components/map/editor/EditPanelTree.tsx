@@ -176,44 +176,44 @@ export function EditPanelTree({
             parent = parent.parent
         }
 
-        // Scroll the row to the vertical centre of the container.
-        // react-arborist virtualises rows, so we need to wait until the
-        // tree re-renders after opening ancestors before the row exists.
+        // Wait for react-arborist and useMeasure to be ready
         let attempt = 0
-        const maxAttempts = 5
+        const maxAttempts = 15 // Allow up to 1.5s for tab transitions
         const tryScroll = () => {
             attempt++
             try {
+                // If bounds are 0, the tab might still be hidden/animating. Wait for it.
+                if (bounds.height === 0) {
+                    throw new Error('bounds not ready')
+                }
+                
                 const freshNode = tree.get(selectedFeatureId)
                 if (!freshNode) throw new Error('node missing')
-
-                // Find the scroll container: react-arborist renders a
-                // div[role="tree"] > div (the scroll wrapper).
-                const listEl: HTMLElement | null =
-                    (tree.listEl as HTMLElement | undefined) ?? // public in some versions
-                    document.querySelector(`[role="tree"][data-testid]`)?.parentElement ?? null
-
-                if (listEl) {
-                    const rowTop = freshNode.rowIndex * ROW_HEIGHT
-                    const centeredTop = rowTop - (bounds.height / 2) + (ROW_HEIGHT / 2)
-                    listEl.scrollTop = Math.max(0, centeredTop)
-                } else {
-                    // Fallback: use the built-in scrollTo (won't centre)
-                    freshNode.scrollTo()
+                if (freshNode.rowIndex === null || freshNode.rowIndex === undefined || freshNode.rowIndex < 0) {
+                    throw new Error('rowIndex not ready yet')
                 }
-                return
+
+                // If the container is available, make the scroll smooth
+                if (tree.listEl?.current) {
+                    tree.listEl.current.style.scrollBehavior = 'smooth'
+                }
+
+                // Call the built-in scrollTo API which handles virtualization correctly
+                tree.scrollTo(selectedFeatureId, "center")
+                
+                return // Success!
             } catch { /* ignore */ }
             if (attempt < maxAttempts) {
-                timerId = window.setTimeout(tryScroll, 80)
+                timerId = window.setTimeout(tryScroll, 100)
             }
         }
-        let timerId = window.setTimeout(tryScroll, 30)
+        let timerId = window.setTimeout(tryScroll, 100)
         return () => window.clearTimeout(timerId)
     }, [selectedFeatureId, bounds.height])
 
     return (
         <EditTreeContext.Provider value={contextValue}>
-            <div className="flex min-h-0 flex-1 flex-col" ref={ref}>
+            <div className="flex min-h-0 flex-1 flex-col" ref={ref} id="edit-panel-tree-container">
                 <Tree<TreeNodeData>
                     ref={treeRef}
                     data={data}

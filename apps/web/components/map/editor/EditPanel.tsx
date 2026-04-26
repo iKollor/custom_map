@@ -113,7 +113,7 @@ export function EditPanel({
     }
 
     return (
-        <EditPanelShell>
+        <EditPanelShell selectedFeatureId={selectedFeatureId}>
             <div className="flex items-center gap-2 border-b border-[#6e00a3]/18 bg-linear-to-r from-[#6e00a3]/10 to-[#40a7f4]/12 px-4 py-3">
                 <Pencil className="h-4 w-4 text-[#6e00a3]" />
                 <span className="text-sm font-semibold text-[#4f2076] dark:text-[#d9b6fb]">Modo Edicion</span>
@@ -282,11 +282,11 @@ export function EditPanel({
  * - Mobile: bottom sheet con 3 snap points y drag nativo via touch events.
  * - Desktop: panel flotante a la derecha con animación de entrada.
  */
-function EditPanelShell({ children }: { children: ReactNode }) {
+function EditPanelShell({ children, selectedFeatureId }: { children: ReactNode, selectedFeatureId?: string | null }) {
     const isMobile = useIsMobile()
 
     if (isMobile) {
-        return <MobileBottomSheet>{children}</MobileBottomSheet>
+        return <MobileBottomSheet selectedFeatureId={selectedFeatureId}>{children}</MobileBottomSheet>
     }
 
     return (
@@ -306,11 +306,18 @@ const SNAP_COLLAPSED = 0.18  // ~18vh – header + tabs visible
 const SNAP_HALF = 0.50       // ~50vh
 const SNAP_FULL = 0.85       // ~85vh
 
-function MobileBottomSheet({ children }: { children: ReactNode }) {
+function MobileBottomSheet({ children, selectedFeatureId }: { children: ReactNode, selectedFeatureId?: string | null }) {
     const sheetRef = useRef<HTMLDivElement>(null)
     const dragRef = useRef<{ startY: number; startH: number } | null>(null)
     const [heightVh, setHeightVh] = useState(SNAP_COLLAPSED)
     const [isDragging, setIsDragging] = useState(false)
+
+    // Expand the bottom sheet automatically when a feature is selected
+    useEffect(() => {
+        if (selectedFeatureId && heightVh === SNAP_COLLAPSED) {
+            setHeightVh(SNAP_HALF)
+        }
+    }, [selectedFeatureId, heightVh])
 
     // Convert vh fraction to px for current viewport
     const toPx = useCallback((vhFrac: number) => window.innerHeight * vhFrac, [])

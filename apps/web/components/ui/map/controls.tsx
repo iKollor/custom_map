@@ -136,20 +136,8 @@ function MapControls({
 
         setSearchingPlace(true);
         try {
-            const params = new URLSearchParams({
-                q: term.trim(),
-                format: "jsonv2",
-                limit: "1",
-                "accept-language": "es",
-            });
-
             const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?${params.toString()}`,
-                {
-                    headers: {
-                        Accept: "application/json",
-                    },
-                },
+                `/api/geocode?q=${encodeURIComponent(term.trim())}`
             );
 
             if (!response.ok) {

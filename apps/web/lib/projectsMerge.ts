@@ -8,6 +8,8 @@ export type ProjectBaseline = {
 
 export type BaselineMeta = {
     updatedAt?: string | null
+    /** IDs of all projects the client knew about at the time of the baseline. */
+    projectIds?: string[]
     projects: ProjectBaseline[]
 }
 
@@ -42,6 +44,8 @@ export function mergeStoredState(
     const currentProjects = new Map(current.projects.map((p) => [p.id, p]))
     const incomingProjects = new Map(incoming.projects.map((p) => [p.id, p]))
     const baselineByProject = new Map((baseline?.projects ?? []).map((b) => [b.id, b]))
+    const baselineProjectIds = new Set(baseline?.projectIds ?? [])
+    const hasBaselineProjectIds = !!baseline?.projectIds
 
     const allIds = new Set<string>([...currentProjects.keys(), ...incomingProjects.keys()])
     const mergedProjects: MapProject[] = []
@@ -52,7 +56,11 @@ export function mergeStoredState(
 
         if (cur && !inc) {
             // Project exists on server but client did not send it.
-            // Treat as "client did not see this project" → keep server's copy.
+            if (hasBaselineProjectIds && baselineProjectIds.has(id)) {
+                // Client knew about this project and intentionally removed it → delete.
+                continue
+            }
+            // Client never saw this project → keep server's copy.
             mergedProjects.push(cur)
             continue
         }
@@ -112,6 +120,7 @@ export function mergeStoredState(
 export function buildBaselineMeta(state: StoredState, updatedAt?: string | null): BaselineMeta {
     return {
         updatedAt: updatedAt ?? null,
+        projectIds: state.projects.map((project) => project.id),
         projects: state.projects.map((project) => ({
             id: project.id,
             featureIds: project.features.map((feature) => feature._id),
